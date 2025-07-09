@@ -99,7 +99,7 @@ if __name__ == "__main__":
                     w_cluster=param['w_cluster'],
                     t_multiview=param['t_multiview'],
                     t_cluster=param['t_cluster'],
-                    refine=args.refine
+                    refine=param['refine']
                     )
 
         end_time = time.time()
