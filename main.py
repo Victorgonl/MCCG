@@ -29,10 +29,8 @@ if __name__ == "__main__":
     start_time = time.time()
     set_all_seed(args.seed)
 
-    # Preprocess data, run only once.
     preprocess_data()
 
-    # Training
     param_combin = list(itertools.product(*args_dict.values()))
     param_names = list(args_dict.keys())
     param_dicts = [dict(zip(param_names, combo)) for combo in param_combin]
@@ -99,7 +97,7 @@ if __name__ == "__main__":
                     w_cluster=param['w_cluster'],
                     t_multiview=param['t_multiview'],
                     t_cluster=param['t_cluster'],
-                    refine=param['refine']
+                    refine=args.refine
                     )
 
         end_time = time.time()

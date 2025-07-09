@@ -39,5 +39,5 @@ t_multiview: [ 0.3 ]
 t_cluster: [ 0.3 ]
 
 # refine
-refine: False
+refine: True
 
