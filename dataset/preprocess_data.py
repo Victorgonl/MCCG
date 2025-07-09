@@ -97,9 +97,13 @@ def unify_name_order(name):
 
 def dump_plain_texts_to_file(raw_data_root, processed_data_root):
     """
-    Dump raw publication data to files.
-    Plain texts consist of all paper attributes and the authors' names and organizations (except year).
+    Dump raw publication data to files with caching.
     """
+    cache_path = os.path.join(processed_data_root, 'extract_text', 'plain_text.txt')
+    if os.path.exists(cache_path):
+        print(f'Cache found at {cache_path}, skipping processing.')
+        return
+
     train_pubs_dict = load_json(os.path.join(raw_data_root, 'train', 'train_pub.json'))
     valid_pubs_dict = load_json(os.path.join(raw_data_root, 'valid', 'sna_valid_pub.json'))
 
@@ -115,7 +119,7 @@ def dump_plain_texts_to_file(raw_data_root, processed_data_root):
 
     texts_dir = os.path.join(processed_data_root, 'extract_text')
     os.makedirs(texts_dir, exist_ok=True)
-    wf = codecs.open(os.path.join(texts_dir, 'plain_text.txt'), 'w', encoding='utf-8')
+    wf = codecs.open(cache_path, 'w', encoding='utf-8')
 
     for i, pid in enumerate(tqdm(pubs_dict)):
         paper_features = []
@@ -177,24 +181,31 @@ def dump_plain_texts_to_file(raw_data_root, processed_data_root):
         paper_features.append(org_features + ' ' + title_features + ' ' + keywd_features + ' ' + venue_features + ' ' + abstract_features + ' ')
         wf.write(' '.join(paper_features) + '\n')
 
-    print(f'All paper texts extracted.')
+    print(f'All paper texts extracted and saved to cache.')
     wf.close()
 
 
 def train_w2v_model(processed_data_root):
     texts_dir = join(processed_data_root, 'extract_text')
-    sentences = word2vec.Text8Corpus(join(texts_dir, 'plain_text.txt'))
-
     model_path = join(processed_data_root, 'w2v_model')
     os.makedirs(model_path, exist_ok=True)
+    model_file = join(model_path, 'tvt.model')
+
+    if os.path.exists(model_file):
+        model = word2vec.Word2Vec.load(model_file)
+        print(f'Loaded cached word2vec model from {model_file}.')
+        return model
+
+    sentences = word2vec.Text8Corpus(join(texts_dir, 'plain_text.txt'))
     model = word2vec.Word2Vec(sentences, size=100, negative=5, min_count=5, window=5)
-    model.save(join(model_path, 'tvt.model'))
-    print(f'Finish word2vec training.')
+    model.save(model_file)
+    print(f'Finish word2vec training and saved model to {model_file}.')
+    return model
 
 
 def dump_paper_emb(processed_data_root, model_name):
     """
-    dump paper's [title, org, keywords] average word-embedding as semantic feature.
+    dump paper's [title, org, keywords] average word-embedding as semantic feature with caching.
     """
     model_path = join(processed_data_root, 'w2v_model')
     w2v_model = word2vec.Word2Vec.load(join(model_path, f'{model_name}.model'))
@@ -202,8 +213,13 @@ def dump_paper_emb(processed_data_root, model_name):
     for mode in ['train', 'valid', 'test']:
         raw_pubs = read_raw_pubs(mode)
         for n, name in enumerate(tqdm(raw_pubs)):
-            name_pubs = load_json(join(processed_data_root, 'names_pub', mode, name + '.json'))
             text_feature_path = join(processed_data_root, 'paper_emb', name)
+            ptext_emb_file = join(text_feature_path, 'ptext_emb.pkl')
+            tcp_file = join(text_feature_path, 'tcp.pkl')
+            if os.path.exists(ptext_emb_file) and os.path.exists(tcp_file):
+                continue
+
+            name_pubs = load_json(join(processed_data_root, 'names_pub', mode, name + '.json'))
             os.makedirs(text_feature_path, exist_ok=True)
 
             ori_name = name
@@ -215,7 +231,6 @@ def dump_paper_emb(processed_data_root, model_name):
 
             for i, pid in enumerate(name_pubs):
                 pub = name_pubs[pid]
-                # save authors
                 org = ""
                 find_author = False
                 for author in pub["authors"]:
@@ -273,16 +288,15 @@ def dump_paper_emb(processed_data_root, model_name):
 
                 ptext_emb[pid] = np.mean(words_vec, 0)
 
-            save_pickle(ptext_emb, join(text_feature_path, 'ptext_emb.pkl'))
-            save_pickle(tcp, join(text_feature_path, 'tcp.pkl'))
+            save_pickle(ptext_emb, ptext_emb_file)
+            save_pickle(tcp, tcp_file)
 
     print("Finishing dump all paper embd into files.")
 
 
 def dump_name_pubs():
     """
-    Split publications informations by {name} and dump files as {name}.json
-
+    Split publications informations by {name} and dump files as {name}.json with caching.
     """
     for mode in ['train', 'valid', 'test']:
         raw_pubs = read_raw_pubs(mode)
@@ -291,6 +305,10 @@ def dump_name_pubs():
         if not os.path.exists(file_path):
             check_mkdir(file_path)
         for name in tqdm(raw_pubs):
+            name_file = join(file_path, name + '.json')
+            if os.path.exists(name_file):
+                continue
+
             name_pubs_raw = {}
             if mode != "train":
                 for i, pid in enumerate(raw_pubs[name]):
@@ -302,28 +320,36 @@ def dump_name_pubs():
                 for pid in pids:
                     name_pubs_raw[pid] = pub_info[pid]
 
-            dump_json(name_pubs_raw, join(file_path, name + '.json'), indent=4)
+            dump_json(name_pubs_raw, name_file, indent=4)
 
     print("Finishing dump pubs according to names.")
 
 
 def dump_features_relations_to_file():
     """
-    Generate paper features and relations by raw publication data and dump to files.
-    Paper features consist of title, org, keywords. Paper relations consist of author_name, org, venue.
+    Generate paper features and relations by raw publication data and dump to files with caching.
     """
     for mode in ['train', 'valid', 'test']:
         raw_pubs = read_raw_pubs(mode)
         for n, name in tqdm(enumerate(raw_pubs)):
 
             file_path = join(args.save_path, 'relations', mode, name)
-            check_mkdir(file_path)
-            coa_file = open(join(file_path, 'paper_author.txt'), 'w', encoding='utf-8')
-            cov_file = open(join(file_path, 'paper_venue.txt'), 'w', encoding='utf-8')
-            cot_file = open(join(file_path, 'paper_title.txt'), 'w', encoding='utf-8')
-            coo_file = open(join(file_path, 'paper_org.txt'), 'w', encoding='utf-8')
+            cot_path = join(file_path, 'paper_title.txt')
+            coa_path = join(file_path, 'paper_author.txt')
+            cov_path = join(file_path, 'paper_venue.txt')
+            coo_path = join(file_path, 'paper_org.txt')
 
-            authorname_dict = {}  # maintain a author-name-dict
+            # Skip if all files exist (considered cached)
+            if os.path.exists(cot_path) and os.path.exists(coa_path) and os.path.exists(cov_path) and os.path.exists(coo_path):
+                continue
+
+            check_mkdir(file_path)
+            coa_file = open(coa_path, 'w', encoding='utf-8')
+            cov_file = open(cov_path, 'w', encoding='utf-8')
+            cot_file = open(cot_path, 'w', encoding='utf-8')
+            coo_file = open(coo_path, 'w', encoding='utf-8')
+
+            authorname_dict = {}
             pubs_dict = load_json(join(args.save_path, 'names_pub', mode, name + '.json'))
 
             ori_name = name
@@ -374,10 +400,10 @@ def dump_features_relations_to_file():
                         authorname = authorname.replace(" ", "")
 
                     if authorname != name and authorname != name_reverse:
-                        coa_file.write(pid + '\t' + authorname + '\n')  # current name is a name of co-author
+                        coa_file.write(pid + '\t' + authorname + '\n')
                     else:
                         if "org" in author:
-                            org = author["org"]  # current name is a name for disambiguating
+                            org = author["org"]
                             find_author = True
 
                 if not find_author:

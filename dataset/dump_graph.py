@@ -1,3 +1,4 @@
+import os
 import torch
 import numpy as np
 from os.path import join
@@ -162,6 +163,9 @@ def build_graph():
 
         for name in tqdm(raw_pubs):
             save_path = join(args.save_path, 'graph', mode, name)
+            if os.path.exists(save_path) and len(os.listdir(save_path)) > 0:
+                continue
+
             check_mkdir(save_path)
             pubs = save_label_pubs(mode, name, raw_pubs, save_path)
             save_graph(name, pubs, save_path, mode)
