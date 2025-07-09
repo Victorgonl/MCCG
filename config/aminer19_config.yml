@@ -1,6 +1,6 @@
 # cuda
 cuda: True
-gpu: 1
+gpu: 0
 
 # dataset
 dataset: "aminer19"
@@ -37,4 +37,7 @@ l2_coef: [ 0.2 ]
 w_cluster: [ 0.6]
 t_multiview: [ 0.3 ]
 t_cluster: [ 0.3 ]
+
+# refine
+refine: False
 

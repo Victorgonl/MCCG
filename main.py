@@ -74,7 +74,8 @@ if __name__ == "__main__":
               f"-- db_min:                      {param['db_min']}\n" \
               f"-- w_cluster:                   {param['w_cluster']}\n" \
               f"-- t_multiview:                 {param['t_multiview']}\n" \
-              f"-- t_cluster:                   {param['t_cluster']}\n"
+              f"-- t_cluster:                   {param['t_cluster']}\n" \
+              f"-- refine:                      {param['refine']}\n"
         logger.info(msg)
 
         trainer = MCCG_Trainer()
@@ -97,7 +98,8 @@ if __name__ == "__main__":
                     l2_coef=param['l2_coef'],
                     w_cluster=param['w_cluster'],
                     t_multiview=param['t_multiview'],
-                    t_cluster=param['t_cluster']
+                    t_cluster=param['t_cluster'],
+                    refine=param['refine']
                     )
 
         end_time = time.time()
