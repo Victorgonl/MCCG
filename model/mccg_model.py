@@ -57,9 +57,23 @@ class GAT(nn.Module):
 
         return h
 
+class RefineModule(nn.Module):
+    def __init__(self, in_features, hidden_features, out_features, alpha=0.2):
+        super(RefineModule, self).__init__()
+        self.refine_attention_layer = GATLayer(in_features, hidden_features, alpha)
+        self.output_transform = nn.Linear(hidden_features, out_features)
+
+    def forward(self, features, adj_initial, M):
+        refined_attention_logits = self.refine_attention_layer(
+            features, adj_initial, M, concat=False
+        )
+        refined_scores = self.output_transform(refined_attention_logits)
+        refined_scores = torch.sigmoid(refined_scores)
+        refined_adj = adj_initial * refined_scores
+        return refined_adj
 
 class MCCG(nn.Module):
-    def __init__(self, encoder, dim_hidden, dim_proj_multiview, dim_proj_cluster):
+    def __init__(self, encoder, dim_hidden, dim_proj_multiview, dim_proj_cluster, refine=False):
         super(MCCG, self).__init__()
         self.encoder = encoder
         self.multiview_projector = nn.Sequential(
@@ -82,10 +96,28 @@ class MCCG(nn.Module):
             nn.Linear(8, 1),
             nn.Sigmoid(),
         )
+        if refine:
+            self.refine_module = RefineModule(dim_hidden, dim_hidden // 2, 1)
+        else:
+            self.refine_module = None
 
     def forward(self, x1, adj1, M1, x2, adj2, M2):
-        z1 = self.encoder(x1, adj1, M1)
-        z2 = self.encoder(x2, adj2, M2)
+
+        # apply graph refinement
+        if self.refine_module is not None:
+            z1_initial = self.encoder(x1, adj1, M1)
+            z2_initial = self.encoder(x2, adj2, M2)
+
+            refined_adj1 = self.refine_module(z1_initial, adj1, M1)
+            refined_adj2 = self.refine_module(z2_initial, adj2, M2)
+
+            z1 = self.encoder(x1, refined_adj1, M1)
+            z2 = self.encoder(x2, refined_adj2, M2)
+
+        else:
+            z1 = self.encoder(x1, adj1, M1)
+            z2 = self.encoder(x2, adj2, M2)
+
         z = (z1 + z2) / 2
 
         z_view1 = F.normalize(self.multiview_projector(z1), dim=1)
