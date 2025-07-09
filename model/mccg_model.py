@@ -98,6 +98,7 @@ class MCCG(nn.Module):
         )
         if refine:
             self.refine_module = RefineModule(dim_hidden, dim_hidden // 2, 1)
+            print("\nUsing refine module!\n")
         else:
             self.refine_module = None
 
