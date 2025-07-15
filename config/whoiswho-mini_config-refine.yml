@@ -5,7 +5,7 @@ mode: train
 save_path: dataset/whoiswho-mini
 log_dir: .expert_record/whoiswho-mini
 predict_result: whoiswho-mini_results.txt
-ground_truth_file: sna_test_ground_truth.json
+ground_truth_file: dataset/whoiswho-mini/src/test/sna_test_ground_truth.json
 layer_shape:
 - 100
 - 256

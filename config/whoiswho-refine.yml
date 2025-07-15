@@ -8,7 +8,7 @@ mode: "train"    # train, valid, test
 save_path: "dataset/whoiswho"
 log_dir: ".expert_record/whoiswho"
 predict_result: "whoiswho_results.txt"
-ground_truth_file: "sna_test_ground_truth.json"
+ground_truth_file: "dataset/whoiswho-mini/src/test/sna_test_ground_truth.json"
 
 # dimension of networks
 layer_shape: [ 100, 256, 256 ]

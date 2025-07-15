@@ -1,4 +1,5 @@
 from dataset.load_data import load_json
+import argparse
 
 
 def evaluate(predict_result, ground_truth):
@@ -28,11 +29,22 @@ def evaluate(predict_result, ground_truth):
         for pid in pubs:
             predict_labels.append(predicted_pubs[pid])
 
-        pairwise_precision, pairwise_recall, pairwise_f1 = pairwise_evaluate(true_labels, predict_labels)
+        pairwise_precision, pairwise_recall, pairwise_f1 = pairwise_evaluate(
+            true_labels, predict_labels
+        )
         result_list.append((pairwise_precision, pairwise_recall, pairwise_f1))
         name_nums += 1
 
-        print("name:", name, "pre:", "%.4f" % pairwise_precision, "rec:", "%.4f" % pairwise_recall, "f1:", "%.4f" % pairwise_f1)
+        print(
+            "name:",
+            name,
+            "pre:",
+            "%.4f" % pairwise_precision,
+            "rec:",
+            "%.4f" % pairwise_recall,
+            "f1:",
+            "%.4f" % pairwise_f1,
+        )
 
     avg_pairwise_pre = sum([result[0] for result in result_list]) / name_nums
     avg_pairwise_rec = sum([result[1] for result in result_list]) / name_nums
@@ -53,7 +65,9 @@ def pairwise_evaluate(correct_labels, pred_labels):
                 TP_FN += 1
             if pred_labels[i] == pred_labels[j]:
                 TP_FP += 1
-            if (correct_labels[i] == correct_labels[j]) and (pred_labels[i] == pred_labels[j]):
+            if (correct_labels[i] == correct_labels[j]) and (
+                pred_labels[i] == pred_labels[j]
+            ):
                 TP += 1
 
     if TP == 0:
@@ -63,13 +77,20 @@ def pairwise_evaluate(correct_labels, pred_labels):
     else:
         pairwise_precision = TP / TP_FP
         pairwise_recall = TP / TP_FN
-        pairwise_f1 = (2 * pairwise_precision * pairwise_recall) / (pairwise_precision + pairwise_recall)
+        pairwise_f1 = (2 * pairwise_precision * pairwise_recall) / (
+            pairwise_precision + pairwise_recall
+        )
 
     return pairwise_precision, pairwise_recall, pairwise_f1
 
 
-if __name__ == '__main__':
-    predict = 'path of predict results'
-    ground_truth = 'path of ground truth'
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="Evaluate predictions against ground truth."
+    )
+    parser.add_argument("--predict", required=True, help="Path to prediction results")
+    parser.add_argument("--ground_truth", required=True, help="Path to ground truth")
 
-    evaluate(predict, ground_truth)
+    args = parser.parse_args()
+
+    evaluate(args.predict, args.ground_truth)

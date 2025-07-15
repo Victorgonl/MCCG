@@ -142,7 +142,8 @@ class MCCG_Trainer:
 
         predict = get_results(names, pubs, results)
 
-        ground_truth = join(args.save_path, 'src', args.mode, args.ground_truth_file)
+        #ground_truth = join(args.save_path, 'src', args.mode, args.ground_truth_file)
+        ground_truth = args.ground_truth_file
         pre, rec, f1 = evaluate(predict, ground_truth)
 
         with open(join('.expert_record', args.predict_result), 'a', encoding='utf-8') as f:
