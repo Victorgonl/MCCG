@@ -6,6 +6,8 @@ from tqdm import tqdm
 from dataset.load_data import load_data, load_json
 from dataset.save_results import check_mkdir
 from params import set_params
+from itertools import combinations
+from os.path import join
 
 _, args = set_params()
 
@@ -61,7 +63,7 @@ def save_label_pubs(mode, name, raw_pubs, save_path):
     return pubs
 
 
-def save_graph(name, pubs, save_path, mode):
+""" def save_graph(name, pubs, save_path, mode):
     # init node mapping & edge mapping
     paper_dict = {pid: idx for idx, pid in enumerate(pubs)}
     cp_a, cp_o = set(), set()
@@ -128,7 +130,57 @@ def save_graph(name, pubs, save_path, mode):
     with open(join(save_path, 'rel_cp.txt'), 'w') as out_f:
         for i in cp:
             out_f.write(f'{i}\n')
-    out_f.close()
+    out_f.close() """
+
+
+
+def save_graph(name, pubs, save_path, mode, loop=None):
+    if loop:
+        loop.set_postfix(name=name, step="2/3: Saving graph")
+
+    paper_dict = {pid: idx for idx, pid in enumerate(pubs)}
+    cp_a, cp_o = set(), set()
+
+    paper_rel_ath = gen_relations(name, mode, 'author')
+    paper_rel_org = gen_relations(name, mode, 'org')
+    paper_rel_ven = gen_relations(name, mode, 'venue')
+
+    for pid in paper_dict:
+        if pid not in paper_rel_ath:
+            cp_a.add(paper_dict[pid])
+        if pid not in paper_rel_org:
+            cp_o.add(paper_dict[pid])
+
+    cp = cp_a & cp_o
+
+    with open(join(save_path, 'adj_attr.txt'), 'w') as f:
+        for p1, p2 in combinations(paper_dict, 2):
+            p1_idx = paper_dict[p1]
+            p2_idx = paper_dict[p2]
+
+            authors_p1 = paper_rel_ath.get(p1, set())
+            authors_p2 = paper_rel_ath.get(p2, set())
+            co_aths = len(authors_p1 & authors_p2)
+
+            orgs_p1 = paper_rel_org.get(p1, set())
+            orgs_p2 = paper_rel_org.get(p2, set())
+            co_orgs = len(orgs_p1 & orgs_p2)
+
+            vens_p1 = paper_rel_ven.get(p1, set())
+            vens_p2 = paper_rel_ven.get(p2, set())
+            co_vens = len(vens_p1 & vens_p2)
+
+            if co_aths + co_orgs > 0:
+                org_attr_jaccard = co_orgs / (len(orgs_p1 | orgs_p2)) if co_orgs > 0 else 0
+                ven_attr_jaccard = co_vens / (len(vens_p1 | vens_p2)) if co_vens > 0 else 0
+
+                f.write(f'{p1_idx}\t{p2_idx}\t{co_aths}\t{co_orgs}\t'
+                        f'{org_attr_jaccard}\t{co_vens}\t{ven_attr_jaccard}\n')
+
+    with open(join(save_path, 'rel_cp.txt'), 'w') as out_f:
+        for i in cp:
+            out_f.write(f'{i}\n')
+
 
 
 def save_emb(name, pubs, save_path):
@@ -166,16 +218,18 @@ def build_graph(force_rebuild=False):
         loop = tqdm(raw_pubs)
         for name in loop:
             loop.set_postfix(name=name)
+
             save_path = join(args.save_path, 'graph', mode, name)
+
             if not force_rebuild and os.path.exists(save_path) and len(os.listdir(save_path)) > 0:
                 continue
 
             check_mkdir(save_path)
-            loop.set_postfix(step="1/3: Saving label pubs")
+            loop.set_postfix(name=name, step="1/3: Saving label pubs")
             pubs = save_label_pubs(mode, name, raw_pubs, save_path)
-            loop.set_postfix(step="2/3: Saving graph")
-            save_graph(name, pubs, save_path, mode)
-            loop.set_postfix(step="3/3: Saving embeddings")
+            loop.set_postfix(name=name, step="2/3: Saving graph")
+            save_graph(name, pubs, save_path, mode, loop=loop)
+            loop.set_postfix(name=name, step="3/3: Saving embeddings")
             save_emb(name, pubs, save_path)
 
 
