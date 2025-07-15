@@ -171,8 +171,11 @@ def build_graph(force_rebuild=False):
                 continue
 
             check_mkdir(save_path)
+            loop.set_postfix(step="1/3: Saving label pubs")
             pubs = save_label_pubs(mode, name, raw_pubs, save_path)
+            loop.set_postfix(step="2/3: Saving graph")
             save_graph(name, pubs, save_path, mode)
+            loop.set_postfix(step="3/3: Saving embeddings")
             save_emb(name, pubs, save_path)
 
 

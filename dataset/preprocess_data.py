@@ -451,8 +451,8 @@ def dump_features_relations_to_file():
 
 
 def preprocess_data():
-    preprocessing_text="Preprocessing data"
-    print(preprocessing_text, args.save_path)
+    preprocessing_text= f"Preprocessing data: {args.save_path}"
+    print(preprocessing_text)
     print("-" * len(preprocessing_text), "\n")
     print("-> Loading raw data")
     raw_data_root = join(args.save_path, 'src')
