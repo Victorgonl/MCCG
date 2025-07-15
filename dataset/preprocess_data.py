@@ -451,13 +451,19 @@ def dump_features_relations_to_file():
 
 
 def preprocess_data():
+    print("-> Preprocessing data", args.save_path, "\n")
+    print("-> Loading raw data")
     raw_data_root = join(args.save_path, 'src')
     processed_data_root = args.save_path
+    print("-> Dumping plain text files")
     dump_plain_texts_to_file(raw_data_root, processed_data_root)
     dump_name_pubs()
+    print("-> Training word2vec model")
     train_w2v_model(processed_data_root)
+    print("-> Dumping papers embeddings")
     dump_paper_emb(processed_data_root, model_name='tvt')
     dump_features_relations_to_file()
+    print("-> Building papers graph")
     build_graph()
 
 
