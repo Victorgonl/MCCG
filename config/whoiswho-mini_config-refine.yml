@@ -1,7 +1,7 @@
 cuda: false
 gpu: 0
 dataset: whoiswho-mini
-mode: test
+mode: train
 save_path: dataset/whoiswho-mini
 log_dir: .expert_record/whoiswho-mini
 predict_result: whoiswho-mini_results.txt
