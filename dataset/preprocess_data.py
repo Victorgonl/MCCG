@@ -451,7 +451,9 @@ def dump_features_relations_to_file():
 
 
 def preprocess_data():
-    print("-> Preprocessing data", args.save_path, "\n")
+    preprocessing_text="Preprocessing data"
+    print(preprocessing_text, args.save_path)
+    print("-" * len(preprocessing_text), "\n")
     print("-> Loading raw data")
     raw_data_root = join(args.save_path, 'src')
     processed_data_root = args.save_path
@@ -462,9 +464,10 @@ def preprocess_data():
     train_w2v_model(processed_data_root)
     print("-> Dumping papers embeddings")
     dump_paper_emb(processed_data_root, model_name='tvt')
+    print("-> Dumping relations features to files")
     dump_features_relations_to_file()
     print("-> Building papers graph")
-    build_graph()
+    build_graph(force_rebuild=True)
 
 
 if __name__ == "__main__":

@@ -150,7 +150,7 @@ def save_emb(name, pubs, save_path):
     np.save(feats_file_path, ft)
 
 
-def build_graph():
+def build_graph(force_rebuild=False):
     for mode in ["valid", "test"]:
         print("preprocess dataset: ", mode)
         data_base = join(args.save_path, "src")
@@ -161,9 +161,13 @@ def build_graph():
         elif mode == "test":
             raw_pubs = load_json(join(data_base, "test", "sna_test_raw.json"))
 
-        for name in tqdm(raw_pubs):
+        print(f"{mode} raw pubs loaded")
+
+        loop = tqdm(raw_pubs)
+        for name in loop:
+            loop.set_postfix(name=name)
             save_path = join(args.save_path, 'graph', mode, name)
-            if os.path.exists(save_path) and len(os.listdir(save_path)) > 0:
+            if not force_rebuild and os.path.exists(save_path) and len(os.listdir(save_path)) > 0:
                 continue
 
             check_mkdir(save_path)
