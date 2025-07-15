@@ -158,16 +158,16 @@ def save_graph(name, pubs, save_path, mode, loop=None):
             p1_idx = paper_dict[p1]
             p2_idx = paper_dict[p2]
 
-            authors_p1 = paper_rel_ath.get(p1, set())
-            authors_p2 = paper_rel_ath.get(p2, set())
+            authors_p1 = set(paper_rel_ath.get(p1, []))
+            authors_p2 = set(paper_rel_ath.get(p2, []))
             co_aths = len(authors_p1 & authors_p2)
 
-            orgs_p1 = paper_rel_org.get(p1, set())
-            orgs_p2 = paper_rel_org.get(p2, set())
+            orgs_p1 = set(paper_rel_org.get(p1, []))
+            orgs_p2 = set(paper_rel_org.get(p2, []))
             co_orgs = len(orgs_p1 & orgs_p2)
 
-            vens_p1 = paper_rel_ven.get(p1, set())
-            vens_p2 = paper_rel_ven.get(p2, set())
+            vens_p1 = set(paper_rel_ven.get(p1, []))
+            vens_p2 = set(paper_rel_ven.get(p2, []))
             co_vens = len(vens_p1 & vens_p2)
 
             if co_aths + co_orgs > 0:
