@@ -467,7 +467,7 @@ def preprocess_data():
     print("-> Dumping relations features to files")
     dump_features_relations_to_file()
     print("-> Building papers graph")
-    build_graph(force_rebuild=True)
+    build_graph(force_rebuild=False)
 
 
 if __name__ == "__main__":

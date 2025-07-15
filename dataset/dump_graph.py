@@ -217,7 +217,7 @@ def save_emb(name, pubs, save_path):
 
 
 def build_graph(force_rebuild=False):
-    for mode in ["valid", "test"]:
+    for mode in ["train", "valid", "test"]:
         print("preprocess dataset: ", mode)
         data_base = join(args.save_path, "src")
         if mode == "train":
