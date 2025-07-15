@@ -136,22 +136,30 @@ def save_label_pubs(mode, name, raw_pubs, save_path):
 
 def save_graph(name, pubs, save_path, mode, loop=None):
     if loop:
-        loop.set_postfix(name=name, step="2/3: Saving graph")
+        loop.set_postfix(name=name, step="2/3: Saving graph", sub_step="init")
 
     paper_dict = {pid: idx for idx, pid in enumerate(pubs)}
     cp_a, cp_o = set(), set()
 
+    if loop:
+        loop.set_postfix(name=name, step="2/3: Saving graph", sub_step="gen_relations")
+
     paper_rel_ath = gen_relations(name, mode, 'author')
     paper_rel_org = gen_relations(name, mode, 'org')
     paper_rel_ven = gen_relations(name, mode, 'venue')
+
+    if loop:
+        loop.set_postfix(name=name, step="2/3: Saving graph", sub_step="detect_outliers")
 
     for pid in paper_dict:
         if pid not in paper_rel_ath:
             cp_a.add(paper_dict[pid])
         if pid not in paper_rel_org:
             cp_o.add(paper_dict[pid])
-
     cp = cp_a & cp_o
+
+    if loop:
+        loop.set_postfix(name=name, step="2/3: Saving graph", sub_step="writing adj_attr.txt")
 
     with open(join(save_path, 'adj_attr.txt'), 'w') as f:
         for p1, p2 in combinations(paper_dict, 2):
@@ -177,9 +185,15 @@ def save_graph(name, pubs, save_path, mode, loop=None):
                 f.write(f'{p1_idx}\t{p2_idx}\t{co_aths}\t{co_orgs}\t'
                         f'{org_attr_jaccard}\t{co_vens}\t{ven_attr_jaccard}\n')
 
+    if loop:
+        loop.set_postfix(name=name, step="2/3: Saving graph", sub_step="writing rel_cp.txt")
+
     with open(join(save_path, 'rel_cp.txt'), 'w') as out_f:
         for i in cp:
             out_f.write(f'{i}\n')
+
+    if loop:
+        loop.set_postfix(name=name, step="2/3: Saving graph", sub_step="done")
 
 
 
