@@ -2,7 +2,7 @@ from dataset.load_data import load_json
 import argparse
 
 
-def evaluate(predict_result, ground_truth):
+def evaluate(predict_result, ground_truth, print_names=False):
     if isinstance(predict_result, str):
         predict_result = load_json(predict_result)
     if isinstance(ground_truth, str):
@@ -35,16 +35,17 @@ def evaluate(predict_result, ground_truth):
         result_list.append((pairwise_precision, pairwise_recall, pairwise_f1))
         name_nums += 1
 
-        print(
-            "name:",
-            name,
-            "pre:",
-            "%.4f" % pairwise_precision,
-            "rec:",
-            "%.4f" % pairwise_recall,
-            "f1:",
-            "%.4f" % pairwise_f1,
-        )
+        if print_names:
+            print(
+                "name:",
+                name,
+                "pre:",
+                "%.4f" % pairwise_precision,
+                "rec:",
+                "%.4f" % pairwise_recall,
+                "f1:",
+                "%.4f" % pairwise_f1,
+            )
 
     avg_pairwise_pre = sum([result[0] for result in result_list]) / name_nums
     avg_pairwise_rec = sum([result[1] for result in result_list]) / name_nums
