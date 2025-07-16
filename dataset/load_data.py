@@ -37,12 +37,12 @@ def load_dataset(mode):
     return names, pubs
 
 
-def load_graph(name, th_a=1, th_o=0.5, th_v=2):
+def load_graph(name, mode, th_a=1, th_o=0.5, th_v=2):
     data_path = join(args.save_path, 'graph')
-    datapath = join(data_path, args.mode, name)
+    datapath = join(data_path, mode, name)
 
     # Load label
-    if args.mode == "train":
+    if mode == "train":
         p_label = np.load(join(datapath, 'p_label.npy'), allow_pickle=True)
         p_label_list = []
         for pid in p_label.item():

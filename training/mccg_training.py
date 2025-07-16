@@ -52,7 +52,7 @@ class MCCG_Trainer:
         for p, name in enumerate(train_names, 1):
             logger.info(f"Training {p}/{len(train_names)}: {name}")
 
-            label, ft_list, data = load_graph(name, th_a, th_o, th_v)
+            label, ft_list, data = load_graph(name, "train", th_a, th_o, th_v)
             ft_list = ft_list.float().to(device)
             data = data.to(device)
             adj = get_adj(data.edge_index, data.num_nodes)
@@ -148,7 +148,7 @@ class MCCG_Trainer:
                 eval_results = {}
 
                 for ename in eval_names:
-                    _, eft_list, edata = load_graph(ename, th_a, th_o, th_v)
+                    _, eft_list, edata = load_graph(ename, mode, th_a, th_o, th_v)
                     eft_list = eft_list.float().to(device)
                     edata = edata.to(device)
 
