@@ -143,7 +143,7 @@ class MCCG_Trainer:
                 if epoch == args.epochs - 1:
 
                     logger.info(
-                        f"Epoch {epoch+1:3d}/{args.epochs:3d} | MultiView Loss: {loss_multiview.item():.4f} | "
+                        f"Epoch {epoch+1}/{args.epochs} | MultiView Loss: {loss_multiview.item():.4f} | "
                         f"Cluster Loss: {loss_cluster.item():.4f} | Total Loss: {loss_train.item():.4f}"
                     )
 

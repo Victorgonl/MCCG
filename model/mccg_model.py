@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class GATLayer(nn.Module):
     """
     Simple GAT layer, similar to https://arxiv.org/abs/1710.10903
@@ -57,11 +58,16 @@ class GAT(nn.Module):
 
         return h
 
+
 class RefineModule(nn.Module):
-    def __init__(self, in_features, hidden_features, out_features, alpha=0.2):
+    def __init__(
+        self, in_features, hidden_features, out_features, alpha=0.2, hard_cluster=False, threshold=0.5
+    ):
         super(RefineModule, self).__init__()
         self.refine_attention_layer = GATLayer(in_features, hidden_features, alpha)
         self.output_transform = nn.Linear(hidden_features, out_features)
+        self.hard_cluster = hard_cluster
+        self.threshold = threshold
 
     def forward(self, features, adj_initial, M):
         refined_attention_logits = self.refine_attention_layer(
@@ -69,22 +75,31 @@ class RefineModule(nn.Module):
         )
         refined_scores = self.output_transform(refined_attention_logits)
         refined_scores = torch.sigmoid(refined_scores)
-        refined_adj = adj_initial * refined_scores
+
+        if self.hard_cluster:
+            binary_mask = (refined_scores > self.threshold).float()
+            refined_adj = adj_initial * binary_mask
+        else:
+            refined_adj = adj_initial * refined_scores
+
         return refined_adj
 
+
 class MCCG(nn.Module):
-    def __init__(self, encoder, dim_hidden, dim_proj_multiview, dim_proj_cluster, refine=False):
+    def __init__(
+        self, encoder, dim_hidden, dim_proj_multiview, dim_proj_cluster, refine=False
+    ):
         super(MCCG, self).__init__()
         self.encoder = encoder
         self.multiview_projector = nn.Sequential(
             nn.Linear(dim_hidden, dim_hidden),
             nn.ELU(),
-            nn.Linear(dim_hidden, dim_proj_multiview)
+            nn.Linear(dim_hidden, dim_proj_multiview),
         )
         self.cluster_projector = nn.Sequential(
             nn.Linear(dim_hidden, dim_hidden),
             nn.ELU(),
-            nn.Linear(dim_hidden, dim_proj_cluster)
+            nn.Linear(dim_hidden, dim_proj_cluster),
         )
         self.project = nn.Linear(dim_proj_cluster, 32)
         self.MLP = nn.Sequential(
@@ -97,8 +112,7 @@ class MCCG(nn.Module):
             nn.Sigmoid(),
         )
         if refine:
-            self.refine_module = RefineModule(dim_hidden, dim_hidden // 2, 1)
-            print("\nUsing refine module!\n")
+            self.refine_module = RefineModule(dim_hidden, dim_hidden // 2, 1, hard_cluster=True)
         else:
             self.refine_module = None
 
@@ -128,7 +142,9 @@ class MCCG(nn.Module):
 
         return z_multiview, z_cluster
 
-    def SelfSupConLoss(self, features, labels=None, mask=None, temperature=0.2, contrast_mode='all'):
+    def SelfSupConLoss(
+        self, features, labels=None, mask=None, temperature=0.2, contrast_mode="all"
+    ):
         """Compute loss for model. If both `labels` and `mask` are None,
         it degenerates to SimCLR unsupervised loss:
         https://arxiv.org/pdf/2002.05709.pdf
@@ -144,37 +160,41 @@ class MCCG(nn.Module):
         device = features.device
 
         if len(features.shape) < 3:
-            raise ValueError('`features` needs to be [bsz, n_views, ...],'
-                             'at least 3 dimensions are required')
+            raise ValueError(
+                "`features` needs to be [bsz, n_views, ...],"
+                "at least 3 dimensions are required"
+            )
         if len(features.shape) > 3:
             features = features.view(features.shape[0], features.shape[1], -1)
 
         batch_size = features.shape[0]
         if labels is not None and mask is not None:
-            raise ValueError('Cannot define both `labels` and `mask`')
+            raise ValueError("Cannot define both `labels` and `mask`")
         elif labels is None and mask is None:
             mask = torch.eye(batch_size, dtype=torch.float32).to(device)
         elif labels is not None:
             labels = labels.contiguous().view(-1, 1)
             if labels.shape[0] != batch_size:
-                raise ValueError('Num of labels does not match num of features')
+                raise ValueError("Num of labels does not match num of features")
             mask = torch.eq(labels, labels.T).float().to(device)
         else:
             mask = mask.float().to(device)
 
         contrast_count = features.shape[1]
         contrast_feature = torch.cat(torch.unbind(features, dim=1), dim=0)
-        if contrast_mode == 'one':
+        if contrast_mode == "one":
             anchor_feature = features[:, 0]
             anchor_count = 1
-        elif contrast_mode == 'all':
+        elif contrast_mode == "all":
             anchor_feature = contrast_feature
             anchor_count = contrast_count
         else:
-            raise ValueError('Unknown mode: {}'.format(contrast_mode))
+            raise ValueError("Unknown mode: {}".format(contrast_mode))
 
         # compute logits
-        anchor_dot_contrast = torch.div(torch.matmul(anchor_feature, contrast_feature.T), temperature)
+        anchor_dot_contrast = torch.div(
+            torch.matmul(anchor_feature, contrast_feature.T), temperature
+        )
         # for numerical stability
         logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
         logits = anchor_dot_contrast - logits_max.detach()
@@ -187,7 +207,7 @@ class MCCG(nn.Module):
             torch.ones_like(mask),
             1,
             torch.arange(batch_size * anchor_count).view(-1, 1).to(device),
-            0
+            0,
         )
         mask = mask * logits_mask
 
