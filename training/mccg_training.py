@@ -140,14 +140,14 @@ class MCCG_Trainer:
                 loss_train.backward()
                 optimizer.step()
 
-                if (epoch == args.epochs -1):
+                if epoch == args.epochs - 1:
 
                     logger.info(
-                        f"Epoch {epoch:3d} | MultiView Loss: {loss_multiview.item():.4f} | "
+                        f"Epoch {epoch+1:3d}/{args.epochs:3d} | MultiView Loss: {loss_multiview.item():.4f} | "
                         f"Cluster Loss: {loss_cluster.item():.4f} | Total Loss: {loss_train.item():.4f}"
                     )
 
-                    eval_results = {}
+                    """ eval_results = {}
 
                     for ename in eval_names:
                         _, eft_list, edata = load_graph(ename, mode, th_a, th_o, th_v)
@@ -181,10 +181,46 @@ class MCCG_Trainer:
 
                     logger.info(
                         f"[{mode.upper()}][Epoch {epoch}] Precision: {pre:.4f} | Recall: {rec:.4f} | F1: {f1:.4f}"
-                    )
+                    ) """
+
+        eval_results = {}
+
+        for ename in eval_names:
+            _, eft_list, edata = load_graph(ename, mode, th_a, th_o, th_v)
+            eft_list = eft_list.float().to(device)
+            edata = edata.to(device)
+
+            adj_eval = get_adj(edata.edge_index, edata.num_nodes)
+            M_eval = get_M(adj_eval, t=2)
+
+            model.eval()
+            with torch.no_grad():
+                embd = model.encoder(eft_list, adj_eval, M_eval)
+                embd = F.normalize(model.cluster_projector(embd), dim=1)
+                lc_dis = pairwise_distances(
+                    embd.cpu().detach().numpy(), metric="cosine"
+                )
+                eval_labels = hdbscan.HDBSCAN(
+                    cluster_selection_epsilon=db_eps,
+                    min_samples=db_min,
+                    min_cluster_size=db_min,
+                    metric="precomputed",
+                ).fit_predict(lc_dis.astype("double"))
+
+                cm = torch.from_numpy(onehot_encoder(eval_labels))
+                soft_labels = torch.mm(cm, cm.t())
+                eval_results[ename] = matx2list(soft_labels)
+
+        prediction = get_results(eval_names, eval_pubs, eval_results)
+        gt_file = args.ground_truth_file
+        pre, rec, f1 = evaluate(prediction, gt_file)
 
         prediction = get_results(eval_names, eval_pubs, eval_results)
         pre, rec, f1 = evaluate(prediction, args.ground_truth_file, print_names=True)
+
+        logger.info(
+            f"[{mode.upper()}] AVERAGE: Precision: {pre:.4f} | Recall: {rec:.4f} | F1: {f1:.4f}"
+        )
 
         with open(
             join(".expert_record", args.predict_result), "a", encoding="utf-8"
