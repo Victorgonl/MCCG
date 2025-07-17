@@ -112,7 +112,7 @@ class MCCG(nn.Module):
             nn.Sigmoid(),
         )
         if refine:
-            self.refine_module = RefineModule(dim_hidden, dim_hidden // 2, 1, hard_cluster=True)
+            self.refine_module = RefineModule(dim_hidden, dim_hidden // 2, 1)
         else:
             self.refine_module = None
 
