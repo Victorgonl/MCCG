@@ -59,7 +59,7 @@ class GAT(nn.Module):
         return h
 
 
-class RefineModule(nn.Module):
+""" class RefineModule(nn.Module):
     def __init__(
         self, in_features, hidden_features, out_features, alpha=0.2, hard_cluster=False, threshold=0.5
     ):
@@ -76,6 +76,42 @@ class RefineModule(nn.Module):
         refined_scores = self.output_transform(refined_attention_logits)
         refined_scores = torch.sigmoid(refined_scores)
 
+        if self.hard_cluster:
+            binary_mask = (refined_scores > self.threshold).float()
+            refined_adj = adj_initial * binary_mask
+        else:
+            refined_adj = adj_initial * refined_scores
+
+        return refined_adj """
+
+class RefineModule(nn.Module):
+    def __init__(
+        self, in_features, hidden_features, out_features, alpha=0.2, hard_cluster=False, threshold=0.5
+    ):
+        super(RefineModule, self).__init__()
+        # use a simple MLP to process the absolute feature differences
+        self.refine_mlp = nn.Sequential(
+            nn.Linear(in_features, hidden_features),
+            nn.LeakyReLU(alpha),
+            nn.Linear(hidden_features, out_features),
+            nn.Sigmoid()
+        )
+        self.hard_cluster = hard_cluster
+        self.threshold = threshold
+
+    def forward(self, features, adj_initial, M):
+        # calculate pairwise absolute differences between features
+        n_nodes = features.size(0)
+        features_expanded1 = features.unsqueeze(1).expand(-1, n_nodes, -1)  # [N, N, D]
+        features_expanded2 = features.unsqueeze(0).expand(n_nodes, -1, -1)  # [N, N, D]
+        feature_diffs = torch.abs(features_expanded1 - features_expanded2)  # [N, N, D]
+        
+        # process differences through MLP to get refinement scores
+        refined_scores = self.refine_mlp(feature_diffs).squeeze(-1)  # [N, N]
+        
+        # apply the mask M
+        refined_scores = refined_scores * M
+        
         if self.hard_cluster:
             binary_mask = (refined_scores > self.threshold).float()
             refined_adj = adj_initial * binary_mask
