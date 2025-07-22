@@ -139,7 +139,7 @@ class MCCG(nn.Module):
             nn.Linear(dim_hidden, dim_proj_cluster),
         )
         self.diff_classifier = nn.Sequential(
-            nn.Linear(dim_hidden, dim_hidden),
+            nn.Linear(dim_hidden, dim_hidden // 2),
             nn.ReLU(),
             nn.Linear(dim_hidden, 1)
         )
@@ -187,7 +187,7 @@ class MCCG(nn.Module):
 
         z_multiview = torch.cat([z_view1.unsqueeze(1), z_view2.unsqueeze(1)], dim=1)
 
-        z_diff = self.diff_classifier(torch.abs(F.normalize(z1) - F.normalize(z2)))
+        z_diff = self.diff_classifier(torch.abs(z1 - z2))
 
         return z_multiview, z_cluster, z_diff.squeeze()
     
