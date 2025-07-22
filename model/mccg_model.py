@@ -141,7 +141,7 @@ class MCCG(nn.Module):
         self.diff_classifier = nn.Sequential(
             nn.Linear(dim_hidden, dim_hidden // 2),
             nn.ReLU(),
-            nn.Linear(dim_hidden, 1)
+            nn.Linear(dim_hidden // 2, 1)
         )
         self.project = nn.Linear(dim_proj_cluster, 32)
         self.MLP = nn.Sequential(
