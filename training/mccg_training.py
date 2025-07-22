@@ -40,6 +40,7 @@ class MCCG_Trainer:
         db_min,
         l2_coef,
         w_cluster,
+        w_diff,
         t_multiview,
         t_cluster,
         refine,
@@ -113,7 +114,7 @@ class MCCG_Trainer:
             for epoch in range(1, args.epochs + 1):
                 model.train()
                 optimizer.zero_grad()
-                embd_multiview, embd_cluster = model(x1, adj1, M1, x2, adj2, M2)
+                embd_multiview, embd_cluster, diff_pred = model(x1, adj1, M1, x2, adj2, M2)
 
                 dis = pairwise_distances(
                     embd_cluster.cpu().detach().numpy(), metric="cosine"
@@ -135,7 +136,9 @@ class MCCG_Trainer:
                 loss_multiview = model.SelfSupConLoss(
                     embd_multiview, labels, contrast_mode="all", temperature=t_multiview
                 )
-                loss_train = w_cluster * loss_cluster + (1 - w_cluster) * loss_multiview
+                loss_diff = model.DiffLoss(diff_pred, labels)
+
+                loss_train = w_cluster * loss_cluster + (1 - w_cluster) * loss_multiview * w_diff * loss_diff
 
                 loss_train.backward()
                 optimizer.step()

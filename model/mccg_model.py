@@ -99,6 +99,8 @@ class RefineModule(nn.Module):
         self.hard_cluster = hard_cluster
         self.threshold = threshold
 
+        self.diff_loss = nn.BCEWithLogitsLoss()
+
     def forward(self, features, adj_initial, M):
         # calculate pairwise absolute differences between features
         n_nodes = features.size(0)
@@ -137,6 +139,11 @@ class MCCG(nn.Module):
             nn.ELU(),
             nn.Linear(dim_hidden, dim_proj_cluster),
         )
+        self.diff_classifier = nn.Sequential(
+            nn.Linear(dim_hidden, dim_hidden),
+            nn.ReLU(),
+            nn.Linear(dim_hidden, 1)
+        )
         self.project = nn.Linear(dim_proj_cluster, 32)
         self.MLP = nn.Sequential(
             nn.BatchNorm1d(32),
@@ -173,10 +180,17 @@ class MCCG(nn.Module):
 
         z_view1 = F.normalize(self.multiview_projector(z1), dim=1)
         z_view2 = F.normalize(self.multiview_projector(z2), dim=1)
+
         z_cluster = F.normalize(self.cluster_projector(z), dim=1)
+
         z_multiview = torch.cat([z_view1.unsqueeze(1), z_view2.unsqueeze(1)], dim=1)
 
-        return z_multiview, z_cluster
+        z_diff = self.diff_classifier(torch.abs(z1 - z2))
+
+        return z_multiview, z_cluster, z_diff.squeeze()
+    
+    def DiffLoss(self, pred, labels):
+        return self.diff_loss(pred, labels)
 
     def SelfSupConLoss(
         self, features, labels=None, mask=None, temperature=0.2, contrast_mode="all"
