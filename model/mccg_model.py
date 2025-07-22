@@ -99,7 +99,6 @@ class RefineModule(nn.Module):
         self.hard_cluster = hard_cluster
         self.threshold = threshold
 
-        self.diff_loss = nn.BCEWithLogitsLoss()
 
     def forward(self, features, adj_initial, M):
         # calculate pairwise absolute differences between features
@@ -158,6 +157,9 @@ class MCCG(nn.Module):
             self.refine_module = RefineModule(dim_hidden, dim_hidden // 2, 1)
         else:
             self.refine_module = None
+
+        self.diff_loss = nn.BCEWithLogitsLoss()
+
 
     def forward(self, x1, adj1, M1, x2, adj2, M2):
 
