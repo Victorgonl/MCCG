@@ -148,10 +148,13 @@ class MCCG_Trainer:
                 )
                 loss_diff = model.DiffLoss(diff_pred, labels.float())
 
+                w_multiview = 1 - w_cluster - w_diff
+                assert w_cluster + w_diff + w_multiview == 1.0
+
                 loss_train = (
                     w_cluster * loss_cluster
-                    + (1 - w_cluster - w_diff) * loss_multiview
                     + w_diff * loss_diff
+                    + w_multiview * loss_multiview
                 )
 
                 loss_train.backward()
@@ -162,6 +165,7 @@ class MCCG_Trainer:
 
                 logger.info(
                     f"Epoch {epoch}/{args.epochs} | Runtime {duration_minutes:.2f} min | "
+                    f"Diff Loss: {loss_diff.item():.4f} | "
                     f"MultiView Loss: {loss_multiview.item():.4f} | "
                     f"Cluster Loss: {loss_cluster.item():.4f} | Total Loss: {loss_train.item():.4f}"
                 )
