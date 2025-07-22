@@ -1,3 +1,6 @@
+import time
+from datetime import datetime
+
 import hdbscan
 from sklearn.metrics.pairwise import pairwise_distances
 from dataset.enhance_graph import *
@@ -51,7 +54,10 @@ class MCCG_Trainer:
         results = {}
 
         for p, name in enumerate(train_names, 1):
-            logger.info(f"Training {p}/{len(train_names)}: {name}")
+            start_time = datetime.now()
+            logger.info(
+                f"Training {p}/{len(train_names)}: {name} | Start Time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}"
+            )
 
             label, ft_list, data = load_graph(name, "train", th_a, th_o, th_v)
             ft_list = ft_list.float().to(device)
@@ -112,9 +118,13 @@ class MCCG_Trainer:
             )
 
             for epoch in range(1, args.epochs + 1):
+                epoch_start = time.time()
+
                 model.train()
                 optimizer.zero_grad()
-                embd_multiview, embd_cluster, diff_pred = model(x1, adj1, M1, x2, adj2, M2)
+                embd_multiview, embd_cluster, diff_pred = model(
+                    x1, adj1, M1, x2, adj2, M2
+                )
 
                 dis = pairwise_distances(
                     embd_cluster.cpu().detach().numpy(), metric="cosine"
@@ -138,17 +148,23 @@ class MCCG_Trainer:
                 )
                 loss_diff = model.DiffLoss(diff_pred, labels.float())
 
-                loss_train = w_cluster * loss_cluster + (1 - w_cluster - w_diff) * loss_multiview + w_diff * loss_diff
+                loss_train = (
+                    w_cluster * loss_cluster
+                    + (1 - w_cluster - w_diff) * loss_multiview
+                    + w_diff * loss_diff
+                )
 
                 loss_train.backward()
                 optimizer.step()
 
-                if epoch == args.epochs - 1:
+                epoch_end = time.time()
+                duration_minutes = (epoch_end - epoch_start) / 60
 
-                    logger.info(
-                        f"Epoch {epoch+1}/{args.epochs} | MultiView Loss: {loss_multiview.item():.4f} | "
-                        f"Cluster Loss: {loss_cluster.item():.4f} | Total Loss: {loss_train.item():.4f}"
-                    )
+                logger.info(
+                    f"Epoch {epoch}/{args.epochs} | Runtime {duration_minutes:.2f} min | "
+                    f"MultiView Loss: {loss_multiview.item():.4f} | "
+                    f"Cluster Loss: {loss_cluster.item():.4f} | Total Loss: {loss_train.item():.4f}"
+                )
 
         eval_results = {}
 
@@ -177,10 +193,6 @@ class MCCG_Trainer:
                 cm = torch.from_numpy(onehot_encoder(eval_labels))
                 soft_labels = torch.mm(cm, cm.t())
                 eval_results[ename] = matx2list(soft_labels)
-
-        prediction = get_results(eval_names, eval_pubs, eval_results)
-        gt_file = args.ground_truth_file
-        pre, rec, f1 = evaluate(prediction, gt_file)
 
         prediction = get_results(eval_names, eval_pubs, eval_results)
         pre, rec, f1 = evaluate(prediction, args.ground_truth_file, print_names=True)
