@@ -136,7 +136,7 @@ class MCCG_Trainer:
                 loss_multiview = model.SelfSupConLoss(
                     embd_multiview, labels, contrast_mode="all", temperature=t_multiview
                 )
-                loss_diff = model.DiffLoss(diff_pred, labels)
+                loss_diff = model.DiffLoss(diff_pred, labels.float())
 
                 loss_train = w_cluster * loss_cluster + (1 - w_cluster) * loss_multiview * w_diff * loss_diff
 
