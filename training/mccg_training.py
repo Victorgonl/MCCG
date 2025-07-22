@@ -138,7 +138,7 @@ class MCCG_Trainer:
                 )
                 loss_diff = model.DiffLoss(diff_pred, labels.float())
 
-                loss_train = w_cluster * loss_cluster + (1 - w_cluster - loss_diff) * loss_multiview + w_diff * loss_diff
+                loss_train = w_cluster * loss_cluster + (1 - w_cluster - w_diff) * loss_multiview + w_diff * loss_diff
 
                 loss_train.backward()
                 optimizer.step()
