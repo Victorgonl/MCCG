@@ -163,12 +163,13 @@ class MCCG_Trainer:
                 epoch_end = time.time()
                 duration_minutes = (epoch_end - epoch_start) / 60
 
-                logger.info(
-                    f"Epoch {epoch}/{args.epochs} | Runtime {duration_minutes:.2f} min | "
-                    f"Diff Loss: {loss_diff.item():.4f} | "
-                    f"MultiView Loss: {loss_multiview.item():.4f} | "
-                    f"Cluster Loss: {loss_cluster.item():.4f} | Total Loss: {loss_train.item():.4f}"
-                )
+                if epoch == args.epochs:
+                    logger.info(
+                        f"Epoch {epoch}/{args.epochs} | Runtime {duration_minutes:.2f} min | "
+                        f"Diff Loss: {loss_diff.item():.4f} | "
+                        f"MultiView Loss: {loss_multiview.item():.4f} | "
+                        f"Cluster Loss: {loss_cluster.item():.4f} | Total Loss: {loss_train.item():.4f}"
+                    )
 
         eval_results = {}
 
