@@ -186,44 +186,44 @@ class MCCG_Trainer:
                         f"\n{'-'*100}"
                     )
 
-            eval_results = {}
+        eval_results = {}
 
-            for ename in eval_names:
-                _, eft_list, edata = load_graph(ename, mode, th_a, th_o, th_v)
-                eft_list = eft_list.float().to(device)
-                edata = edata.to(device)
+        for ename in eval_names:
+            _, eft_list, edata = load_graph(ename, mode, th_a, th_o, th_v)
+            eft_list = eft_list.float().to(device)
+            edata = edata.to(device)
 
-                adj_eval = get_adj(edata.edge_index, edata.num_nodes)
-                M_eval = get_M(adj_eval, t=2)
+            adj_eval = get_adj(edata.edge_index, edata.num_nodes)
+            M_eval = get_M(adj_eval, t=2)
 
-                model.eval()
-                with torch.no_grad():
-                    embd = model.encoder(eft_list, adj_eval, M_eval)
-                    embd = F.normalize(model.cluster_projector(embd), dim=1)
-                    lc_dis = pairwise_distances(
-                        embd.cpu().detach().numpy(), metric="cosine"
-                    )
-                    eval_labels = hdbscan.HDBSCAN(
-                        cluster_selection_epsilon=db_eps,
-                        min_samples=db_min,
-                        min_cluster_size=db_min,
-                        metric="precomputed",
-                    ).fit_predict(lc_dis.astype("double"))
+            model.eval()
+            with torch.no_grad():
+                embd = model.encoder(eft_list, adj_eval, M_eval)
+                embd = F.normalize(model.cluster_projector(embd), dim=1)
+                lc_dis = pairwise_distances(
+                    embd.cpu().detach().numpy(), metric="cosine"
+                )
+                eval_labels = hdbscan.HDBSCAN(
+                    cluster_selection_epsilon=db_eps,
+                    min_samples=db_min,
+                    min_cluster_size=db_min,
+                    metric="precomputed",
+                ).fit_predict(lc_dis.astype("double"))
 
-                    cm = torch.from_numpy(onehot_encoder(eval_labels))
-                    soft_labels = torch.mm(cm, cm.t())
-                    eval_results[ename] = matx2list(soft_labels)
+                cm = torch.from_numpy(onehot_encoder(eval_labels))
+                soft_labels = torch.mm(cm, cm.t())
+                eval_results[ename] = matx2list(soft_labels)
 
-            prediction = get_results(eval_names, eval_pubs, eval_results)
-            pre, rec, f1 = evaluate(prediction, args.ground_truth_file, print_names=True)
+        prediction = get_results(eval_names, eval_pubs, eval_results)
+        pre, rec, f1 = evaluate(prediction, args.ground_truth_file, print_names=True)
 
-            logger.info(
-                f"[{mode.upper()}] AVERAGE: Precision: {pre:.4f} | Recall: {rec:.4f} | F1: {f1:.4f}"
-            )
+        logger.info(
+            f"[{mode.upper()}] AVERAGE: Precision: {pre:.4f} | Recall: {rec:.4f} | F1: {f1:.4f}"
+        )
 
-            with open(
-                join(".expert_record", args.predict_result), "a", encoding="utf-8"
-            ) as f:
-                msg = f"combin_num: {combin_num}, pre: {pre:.4f}, rec: {rec:.4f}, f1: {f1:.4f}\n"
-                logger.info(msg)
-                f.write(msg)
+        with open(
+            join(".expert_record", args.predict_result), "a", encoding="utf-8"
+        ) as f:
+            msg = f"combin_num: {combin_num}, pre: {pre:.4f}, rec: {rec:.4f}, f1: {f1:.4f}\n"
+            logger.info(msg)
+            f.write(msg)
