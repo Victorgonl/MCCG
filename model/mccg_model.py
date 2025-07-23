@@ -84,16 +84,9 @@ class GAT(nn.Module):
 
         return refined_adj """
 
-
 class RefineModule(nn.Module):
     def __init__(
-        self,
-        in_features,
-        hidden_features,
-        out_features,
-        alpha=0.2,
-        hard_cluster=False,
-        threshold=0.5,
+        self, in_features, hidden_features, out_features, alpha=0.2, hard_cluster=False, threshold=0.5
     ):
         super(RefineModule, self).__init__()
         # use a simple MLP to process the absolute feature differences
@@ -101,10 +94,11 @@ class RefineModule(nn.Module):
             nn.Linear(in_features, hidden_features),
             nn.LeakyReLU(alpha),
             nn.Linear(hidden_features, out_features),
-            nn.Sigmoid(),
+            nn.Sigmoid()
         )
         self.hard_cluster = hard_cluster
         self.threshold = threshold
+
 
     def forward(self, features, adj_initial, M):
         # calculate pairwise absolute differences between features
@@ -112,13 +106,13 @@ class RefineModule(nn.Module):
         features_expanded1 = features.unsqueeze(1).expand(-1, n_nodes, -1)  # [N, N, D]
         features_expanded2 = features.unsqueeze(0).expand(n_nodes, -1, -1)  # [N, N, D]
         feature_diffs = torch.abs(features_expanded1 - features_expanded2)  # [N, N, D]
-
+        
         # process differences through MLP to get refinement scores
         refined_scores = self.refine_mlp(feature_diffs).squeeze(-1)  # [N, N]
-
+        
         # apply the mask M
         refined_scores = refined_scores * M
-
+        
         if self.hard_cluster:
             binary_mask = (refined_scores > self.threshold).float()
             refined_adj = adj_initial * binary_mask
@@ -130,13 +124,7 @@ class RefineModule(nn.Module):
 
 class MCCG(nn.Module):
     def __init__(
-        self,
-        encoder,
-        dim_hidden,
-        dim_proj_multiview,
-        dim_proj_cluster,
-        refine=False,
-        max_diff=5000,
+        self, encoder, dim_hidden, dim_proj_multiview, dim_proj_cluster, refine=False, max_diff=5000
     ):
         super(MCCG, self).__init__()
         self.encoder = encoder
@@ -153,7 +141,7 @@ class MCCG(nn.Module):
         self.diff_classifier = nn.Sequential(
             nn.Linear(dim_hidden, dim_hidden // 2),
             nn.ReLU(),
-            nn.Linear(dim_hidden // 2, 1),
+            nn.Linear(dim_hidden // 2, 1)
         )
         self.project = nn.Linear(dim_proj_cluster, 32)
         self.MLP = nn.Sequential(
@@ -174,75 +162,69 @@ class MCCG(nn.Module):
 
         self.diff_loss = nn.BCEWithLogitsLoss()
 
-    def forward(self, x1, adj1, M1, x2, adj2, M2):
 
-        # apply graph refinement
+    def forward(self, x1, adj1, M1, x2, adj2, M2, labels=None):
+        # --- Encode as before ---
         if self.refine_module is not None:
             z1_initial = self.encoder(x1, adj1, M1)
             z2_initial = self.encoder(x2, adj2, M2)
-
             refined_adj1 = self.refine_module(z1_initial, adj1, M1)
             refined_adj2 = self.refine_module(z2_initial, adj2, M2)
-
             z1 = self.encoder(x1, refined_adj1, M1)
             z2 = self.encoder(x2, refined_adj2, M2)
-
         else:
             z1 = self.encoder(x1, adj1, M1)
             z2 = self.encoder(x2, adj2, M2)
 
-        # z is the average embedding
         z = (z1 + z2) / 2
 
         z_view1 = F.normalize(self.multiview_projector(z1), dim=1)
         z_view2 = F.normalize(self.multiview_projector(z2), dim=1)
-
         z_cluster = F.normalize(self.cluster_projector(z), dim=1)
-
         z_multiview = torch.cat([z_view1.unsqueeze(1), z_view2.unsqueeze(1)], dim=1)
 
-        # return early if max_diff is not set (for eval)
         if not hasattr(self, "max_diff") or self.max_diff is None:
             z_diff = self.diff_classifier(torch.abs(z1 - z2))
             return z_multiview, z_cluster, z_diff.squeeze()
 
-        # --- New pair sampling for DiffLoss ---
+        # --- Pair sampling ---
         N = z.size(0)
+        if labels is not None:
+            labels = labels.view(-1)
+            pos_mask = labels.unsqueeze(0) == labels.unsqueeze(1)
+            neg_mask = ~pos_mask
+            pos_mask.fill_diagonal_(False)
+            neg_mask.fill_diagonal_(False)
+            pos_indices = pos_mask.nonzero(as_tuple=False)
+            neg_indices = neg_mask.nonzero(as_tuple=False)
+        else:
+            sim = F.cosine_similarity(z.unsqueeze(1), z.unsqueeze(0), dim=-1)
+            sim.fill_diagonal_(-1.0)
+            pos_indices = (sim > 0.8).nonzero(as_tuple=False)
+            neg_indices = (sim < 0.2).nonzero(as_tuple=False)
 
-        # Compute cosine similarity matrix to simulate clustering proximity
-        sim = F.cosine_similarity(z.unsqueeze(1), z.unsqueeze(0), dim=-1)  # [N, N]
-        sim.fill_diagonal_(-1.0)  # remove self-similarity
+        if pos_indices.size(0) > 0:
+            pos_indices = pos_indices[torch.randperm(pos_indices.size(0))[:self.max_diff]]
+        if neg_indices.size(0) > 0:
+            neg_indices = neg_indices[torch.randperm(neg_indices.size(0))[:self.max_diff]]
 
-        # Use similarity to define pseudo-positive and pseudo-negative pairs
-        positive_mask = sim > 0.8
-        negative_mask = sim < 0.2
-
-        pos_indices = positive_mask.nonzero(as_tuple=False)
-        neg_indices = negative_mask.nonzero(as_tuple=False)
-
-        num_pos = min(pos_indices.size(0), self.max_diff)
-        num_neg = min(neg_indices.size(0), num_pos)  # Match positive count
-
-        # In the fallback case where no pairs are found
-        if num_pos == 0 or num_neg == 0:
-            # fallback: disable diff supervision this round
-            diff_pred = torch.empty(0, device=z.device)
-            # CHANGE: Return 0 for num_pos and num_neg
-            return z_multiview, z_cluster, diff_pred, 0, 0
-
-        pos_indices = pos_indices[torch.randperm(pos_indices.size(0))[:num_pos]]
-        neg_indices = neg_indices[torch.randperm(neg_indices.size(0))[:num_neg]]
-
-        pair_indices = torch.cat(
-            [pos_indices, neg_indices], dim=0
-        )  # [num_pos + num_neg, 2]
+        pair_indices = torch.cat([pos_indices, neg_indices], dim=0)
         z_i = z[pair_indices[:, 0]]
         z_j = z[pair_indices[:, 1]]
 
-        diff_input = torch.abs(z_i - z_j)  # [num_pairs, D]
-        diff_pred = self.diff_classifier(diff_input).squeeze()  # [num_pairs]
+        diff_input = torch.abs(z_i - z_j)
+        diff_pred = self.diff_classifier(diff_input).squeeze()
 
-        return z_multiview, z_cluster, diff_pred, num_pos, num_neg
+        # Construct binary labels for pairs: 1 = positive, 0 = negative
+        labels_diff = torch.cat([
+            torch.ones(pos_indices.size(0), device=z.device),
+            torch.zeros(neg_indices.size(0), device=z.device)
+        ])
+
+        # Compute BCE loss
+        diff_loss = F.binary_cross_entropy_with_logits(diff_pred, labels_diff)
+
+        return z_multiview, z_cluster, diff_loss, pair_indices
 
     def DiffLoss(self, pred, labels):
         return self.diff_loss(pred, labels)
