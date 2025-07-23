@@ -122,7 +122,7 @@ class RefineModule(nn.Module):
         return refined_adj
 
 class LowHigh_S_CosineGraphLearnModule(nn.Module):
-    def __init__(self,low_sim_threshold=0.4, high_sim_threshold=0.90):
+    def __init__(self,low_sim_threshold, high_sim_threshold):
         super(LowHigh_S_CosineGraphLearnModule, self).__init__()
 
         self.low_threshold = low_sim_threshold
@@ -179,7 +179,7 @@ class MCCG(nn.Module):
             nn.Sigmoid(),
         )
         if refine:
-            self.refine_module = LowHigh_S_CosineGraphLearnModule(dim_hidden, dim_hidden // 2, 1)
+            self.refine_module = LowHigh_S_CosineGraphLearnModule(low_sim_threshold=0.4, high_sim_threshold=0.9)
         else:
             self.refine_module = None
 
