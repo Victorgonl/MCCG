@@ -149,7 +149,7 @@ class MCCG_Trainer:
 
                 cm = onehot_encoder(labels.cpu().numpy())
                 binary_sim = torch.from_numpy((cm @ cm.T).astype("float32")).to(device)
-                loss_diff = model.DiffLoss(diff_pred, binary_sim)
+                loss_diff = model.DiffLoss(diff_pred, binary_sim.view(-1))
 
                 w_multiview = 1 - w_cluster - w_diff
                 assert w_cluster + w_diff + w_multiview == 1.0, "w_cluster + w_diff + w_multiview must be equal 1.0"
