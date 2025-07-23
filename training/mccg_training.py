@@ -46,12 +46,10 @@ class MCCG_Trainer:
         w_cluster,
         t_multiview,
         t_cluster,
-        refine,
-        semi_supervised=False, 
+        refine, 
     ):
         train_names, train_pubs = load_dataset("train")
         eval_names, eval_pubs = load_dataset(mode)
-        results = {}
 
         for p, name in enumerate(train_names, 1):        
             start_time = datetime.now()
@@ -124,12 +122,6 @@ class MCCG_Trainer:
                 model.train()
                 optimizer.zero_grad()
 
-                # ======= Optional semi-supervised ground truth ============
-                if semi_supervised and label is not None:
-                    diff_labels = label.to(device)
-                else:
-                    diff_labels= None
-                # ===========================================================
 
                 embd_multiview, embd_cluster = model(
                     x1, adj1, M1, x2, adj2, M2
@@ -144,13 +136,8 @@ class MCCG_Trainer:
                     min_cluster_size=db_min,
                     metric="precomputed",
                 ).fit_predict(dis.astype("double"))
-
-                # ======= Optional semi-supervised ground truth ============
-                if semi_supervised and label is not None:
-                    labels = label.to(device)
-                else:
-                    labels = torch.from_numpy(pred_labels).to(device)
-                # ===========================================================
+                
+                labels = torch.from_numpy(pred_labels).to(device)
 
                 loss_cluster = model.SelfSupConLoss(
                     embd_cluster.unsqueeze(1),
