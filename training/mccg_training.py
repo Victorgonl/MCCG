@@ -44,7 +44,6 @@ class MCCG_Trainer:
         db_min,
         l2_coef,
         w_cluster,
-        w_diff,
         t_multiview,
         t_cluster,
         refine,
@@ -163,7 +162,7 @@ class MCCG_Trainer:
                     embd_multiview, labels, contrast_mode="all", temperature=t_multiview
                 )
 
-                w_multiview = 1 - w_cluster - w_diff
+                w_multiview = 1 - w_cluster
                 loss_train = (
                     w_cluster * loss_cluster
                     + w_multiview * loss_multiview

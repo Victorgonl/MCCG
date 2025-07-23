@@ -70,7 +70,6 @@ if __name__ == "__main__":
               f"-- th_v:                        {param['th_v']}\n" \
               f"-- db_eps:                      {param['db_eps']}\n" \
               f"-- db_min:                      {param['db_min']}\n" \
-              f"-- w_diff:                      {param['w_diff']}\n" \
               f"-- w_cluster:                   {param['w_cluster']}\n" \
               f"-- t_multiview:                 {param['t_multiview']}\n" \
               f"-- t_cluster:                   {param['t_cluster']}\n" \
@@ -95,7 +94,6 @@ if __name__ == "__main__":
                     db_eps=param['db_eps'],
                     db_min=param['db_min'],
                     l2_coef=param['l2_coef'],
-                    w_diff=param["w_diff"],
                     w_cluster=param['w_cluster'],
                     t_multiview=param['t_multiview'],
                     t_cluster=param['t_cluster'],
