@@ -48,7 +48,7 @@ class MCCG_Trainer:
         t_multiview,
         t_cluster,
         refine,
-        semi_supervised=True, 
+        semi_supervised=False, 
     ):
         train_names, train_pubs = load_dataset("train")
         eval_names, eval_pubs = load_dataset(mode)
