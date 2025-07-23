@@ -126,7 +126,7 @@ class MCCG_Trainer:
 
                 # Pass labels into forward
                 embd_multiview, embd_cluster, loss_diff, pair_indices = model(
-                    x1, adj1, M1, x2, adj2, M2
+                    x1, adj1, M1, x2, adj2, M2, labels=label
                 )
 
                 dis = pairwise_distances(
