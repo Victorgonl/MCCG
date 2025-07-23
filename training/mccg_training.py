@@ -122,7 +122,9 @@ class MCCG_Trainer:
 
                 model.train()
                 optimizer.zero_grad()
-                embd_multiview, embd_cluster, diff_pred, pair_indices = model(
+
+                # --- MODIFIED: Unpack num_pos and num_neg from the model's forward pass ---
+                embd_multiview, embd_cluster, diff_pred, num_pos, num_neg = model(
                     x1, adj1, M1, x2, adj2, M2
                 )
 
@@ -147,10 +149,14 @@ class MCCG_Trainer:
                     embd_multiview, labels, contrast_mode="all", temperature=t_multiview
                 )
 
-                labels_diff = torch.cat(
-                    [torch.ones(model.max_diff), torch.zeros(model.max_diff)]
-                ).to(device)
-                loss_diff = model.DiffLoss(diff_pred, labels_diff)
+                # --- FIXED: Dynamically create labels for DiffLoss and handle the no-pair case ---
+                if diff_pred.numel() > 0:
+                    labels_diff = torch.cat(
+                        [torch.ones(num_pos), torch.zeros(num_neg)]
+                    ).to(device)
+                    loss_diff = model.DiffLoss(diff_pred, labels_diff)
+                else:
+                    loss_diff = torch.tensor(0.0, device=device)
 
                 w_multiview = 1 - w_cluster - w_diff
                 assert (
@@ -172,7 +178,7 @@ class MCCG_Trainer:
                 if epoch == args.epochs:
                     logger.info(
                         f"Epoch {epoch}/{args.epochs} | Runtime {duration_minutes:.2f} min | "
-                        f"Diff Loss: {loss_diff.item():.4f} | "
+                        f"Diff Loss: {loss_diff.item():.4f} () | "
                         f"MultiView Loss: {loss_multiview.item():.4f} | "
                         f"Cluster Loss: {loss_cluster.item():.4f} | Total Loss: {loss_train.item():.4f}"
                     )

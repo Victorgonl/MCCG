@@ -223,11 +223,12 @@ class MCCG(nn.Module):
         num_pos = min(pos_indices.size(0), self.max_diff)
         num_neg = min(neg_indices.size(0), num_pos)  # Match positive count
 
+        # In the fallback case where no pairs are found
         if num_pos == 0 or num_neg == 0:
             # fallback: disable diff supervision this round
             diff_pred = torch.empty(0, device=z.device)
-            pair_indices = torch.empty(0, 2, dtype=torch.long, device=z.device)
-            return z_multiview, z_cluster, diff_pred, pair_indices
+            # CHANGE: Return 0 for num_pos and num_neg
+            return z_multiview, z_cluster, diff_pred, 0, 0
 
         pos_indices = pos_indices[torch.randperm(pos_indices.size(0))[:num_pos]]
         neg_indices = neg_indices[torch.randperm(neg_indices.size(0))[:num_neg]]
@@ -241,7 +242,7 @@ class MCCG(nn.Module):
         diff_input = torch.abs(z_i - z_j)  # [num_pairs, D]
         diff_pred = self.diff_classifier(diff_input).squeeze()  # [num_pairs]
 
-        return z_multiview, z_cluster, diff_pred, pair_indices
+        return z_multiview, z_cluster, diff_pred, num_pos, num_neg
 
     def DiffLoss(self, pred, labels):
         return self.diff_loss(pred, labels)
