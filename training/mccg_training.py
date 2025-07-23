@@ -1,5 +1,5 @@
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import hdbscan
 from numpy import indices
@@ -176,7 +176,7 @@ class MCCG_Trainer:
                 if epoch == args.epochs:
                     name_end = time.time()
                     duration_seconds = name_end - name_start
-                    formatted_duration = str(datetime.timedelta(seconds=int(duration_seconds)))
+                    formatted_duration = str(timedelta(seconds=int(duration_seconds)))
 
                     logger.info(
                         f"Epochs: {epoch}/{args.epochs} | Runtime: {formatted_duration} | "
