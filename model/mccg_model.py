@@ -124,7 +124,7 @@ class RefineModule(nn.Module):
 
 class MCCG(nn.Module):
     def __init__(
-        self, encoder, dim_hidden, dim_proj_multiview, dim_proj_cluster, refine=False, max_diff=10000
+        self, encoder, dim_hidden, dim_proj_multiview, dim_proj_cluster, refine=False, max_diff=5000
     ):
         super(MCCG, self).__init__()
         self.encoder = encoder
