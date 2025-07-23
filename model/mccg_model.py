@@ -124,7 +124,7 @@ class RefineModule(nn.Module):
 
 class MCCG(nn.Module):
     def __init__(
-        self, encoder, dim_hidden, dim_proj_multiview, dim_proj_cluster, refine=False
+        self, encoder, dim_hidden, dim_proj_multiview, dim_proj_cluster, refine=False, max_diff=10000
     ):
         super(MCCG, self).__init__()
         self.encoder = encoder
@@ -158,6 +158,8 @@ class MCCG(nn.Module):
         else:
             self.refine_module = None
 
+        self.max_diff = max_diff
+
         self.diff_loss = nn.BCEWithLogitsLoss()
 
 
@@ -178,6 +180,7 @@ class MCCG(nn.Module):
             z1 = self.encoder(x1, adj1, M1)
             z2 = self.encoder(x2, adj2, M2)
 
+        # z is the average embedding
         z = (z1 + z2) / 2
 
         z_view1 = F.normalize(self.multiview_projector(z1), dim=1)
@@ -187,9 +190,39 @@ class MCCG(nn.Module):
 
         z_multiview = torch.cat([z_view1.unsqueeze(1), z_view2.unsqueeze(1)], dim=1)
 
-        z_diff = self.diff_classifier(torch.abs(z1 - z2))
+        # return early if max_diff is not set (for eval)
+        if not hasattr(self, "max_diff") or self.max_diff is None:
+            z_diff = self.diff_classifier(torch.abs(z1 - z2))
+            return z_multiview, z_cluster, z_diff.squeeze()
 
-        return z_multiview, z_cluster, z_diff.squeeze()
+        # --- New pair sampling for DiffLoss ---
+        N = z.size(0)
+
+        # Compute cosine similarity matrix to simulate clustering proximity
+        sim = F.cosine_similarity(z.unsqueeze(1), z.unsqueeze(0), dim=-1)  # [N, N]
+        sim.fill_diagonal_(-1.0)  # remove self-similarity
+
+        # Dummy clusters: just for example. Replace with actual cluster labels if available.
+        # E.g., if you run HDBSCAN inside forward (not recommended), or pass labels externally.
+        # For now we just take high-similarity pairs as positives
+        positive_mask = sim > 0.8
+        negative_mask = sim < 0.2
+
+        pos_indices = positive_mask.nonzero(as_tuple=False)
+        neg_indices = negative_mask.nonzero(as_tuple=False)
+
+        # Shuffle and sample
+        pos_indices = pos_indices[torch.randperm(pos_indices.size(0))[:self.max_diff]]
+        neg_indices = neg_indices[torch.randperm(neg_indices.size(0))[:self.max_diff]]
+
+        pair_indices = torch.cat([pos_indices, neg_indices], dim=0)  # [max_diff*2, 2]
+        z_i = z[pair_indices[:, 0]]
+        z_j = z[pair_indices[:, 1]]
+
+        diff_input = torch.abs(z_i - z_j)  # [max_diff*2, D]
+        diff_pred = self.diff_classifier(diff_input).squeeze()  # [max_diff*2]
+
+        return z_multiview, z_cluster, diff_pred, pair_indices
     
     def DiffLoss(self, pred, labels):
         return self.diff_loss(pred, labels)

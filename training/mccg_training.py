@@ -122,7 +122,7 @@ class MCCG_Trainer:
 
                 model.train()
                 optimizer.zero_grad()
-                embd_multiview, embd_cluster, diff_pred = model(
+                embd_multiview, embd_cluster, diff_pred, pair_indices = model(
                     x1, adj1, M1, x2, adj2, M2
                 )
 
@@ -147,12 +147,15 @@ class MCCG_Trainer:
                     embd_multiview, labels, contrast_mode="all", temperature=t_multiview
                 )
 
-                cm = onehot_encoder(labels.cpu().numpy())
-                binary_sim = torch.from_numpy((cm @ cm.T).astype("float32")).to(device)
-                loss_diff = model.DiffLoss(diff_pred, binary_sim.view(-1))
+                labels_diff = torch.cat(
+                    [torch.ones(model.max_diff), torch.zeros(model.max_diff)]
+                ).to(device)
+                loss_diff = model.DiffLoss(diff_pred, labels_diff)
 
                 w_multiview = 1 - w_cluster - w_diff
-                assert w_cluster + w_diff + w_multiview == 1.0, "w_cluster + w_diff + w_multiview must be equal 1.0"
+                assert (
+                    w_cluster + w_diff + w_multiview == 1.0
+                ), "w_cluster + w_diff + w_multiview must be equal 1.0"
 
                 loss_train = (
                     w_cluster * loss_cluster
