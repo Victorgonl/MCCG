@@ -132,8 +132,8 @@ class MCCG_Trainer:
                     diff_labels= None
                 # ===========================================================
 
-                embd_multiview, embd_cluster, loss_diff, pair_indices = model(
-                    x1, adj1, M1, x2, adj2, M2, labels=diff_labels
+                embd_multiview, embd_cluster = model(
+                    x1, adj1, M1, x2, adj2, M2
                 )
 
                 dis = pairwise_distances(
@@ -166,7 +166,6 @@ class MCCG_Trainer:
                 w_multiview = 1 - w_cluster - w_diff
                 loss_train = (
                     w_cluster * loss_cluster
-                    + w_diff * loss_diff
                     + w_multiview * loss_multiview
                 )
 
@@ -180,7 +179,6 @@ class MCCG_Trainer:
 
                     logger.info(
                         f"Epochs: {epoch}/{args.epochs} | Runtime: {formatted_duration} | "
-                        f"Diff Loss: {loss_diff.item():.4f} (pairs: {pair_indices.size(0)}) | "
                         f"MultiView Loss: {loss_multiview.item():.4f} | "
                         f"Cluster Loss: {loss_cluster.item():.4f} | Total Loss: {loss_train.item():.4f}"
                         f"\n{'-'*100}"

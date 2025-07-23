@@ -121,10 +121,35 @@ class RefineModule(nn.Module):
 
         return refined_adj
 
+class LowHigh_S_CosineGraphLearnModule(nn.Module):
+    def __init__(self,low_sim_threshold=0.4, high_sim_threshold=0.90):
+        super(LowHigh_S_CosineGraphLearnModule, self).__init__()
+
+        self.low_threshold = low_sim_threshold
+        self.high_threshold = high_sim_threshold
+
+    def drop_forward(self, x, adj):
+
+        semantic_cos_sim = F.cosine_similarity(x.unsqueeze(1), x.unsqueeze(0), dim=2)
+
+        semantic_add_adj = torch.where(semantic_cos_sim>self.high_threshold, torch.ones_like(adj,requires_grad=semantic_cos_sim.requires_grad),torch.zeros_like(adj,requires_grad=semantic_cos_sim.requires_grad))
+        ms_add_adj = semantic_add_adj.int()
+
+        semantic_rm_adj = torch.where(semantic_cos_sim<self.low_threshold, torch.ones_like(adj,requires_grad=semantic_cos_sim.requires_grad),torch.zeros_like(adj,requires_grad=semantic_cos_sim.requires_grad))
+        ms_rm_adj = semantic_rm_adj.int()
+
+        new_adj_tmp = ms_add_adj | adj.int()
+
+        new_adj = new_adj_tmp ^ (new_adj_tmp & ms_rm_adj)
+
+        refine_adj = new_adj - torch.diag_embed(torch.diag(new_adj))  # 对角线置 0
+
+        return refine_adj.float()
+
 
 class MCCG(nn.Module):
     def __init__(
-        self, encoder, dim_hidden, dim_proj_multiview, dim_proj_cluster, refine=False, max_diff=5000
+        self, encoder, dim_hidden, dim_proj_multiview, dim_proj_cluster, refine=False
     ):
         super(MCCG, self).__init__()
         self.encoder = encoder
@@ -154,80 +179,28 @@ class MCCG(nn.Module):
             nn.Sigmoid(),
         )
         if refine:
-            self.refine_module = RefineModule(dim_hidden, dim_hidden // 2, 1)
+            self.refine_module = LowHigh_S_CosineGraphLearnModule(dim_hidden, dim_hidden // 2, 1)
         else:
             self.refine_module = None
 
-        self.max_diff = max_diff
-
-        self.diff_loss = nn.BCEWithLogitsLoss()
-
-
-    def forward(self, x1, adj1, M1, x2, adj2, M2, labels=None):
+    def forward(self, x1, adj1, M1, x2, adj2, M2):
         # --- Encode as before ---
         if self.refine_module is not None:
-            z1_initial = self.encoder(x1, adj1, M1)
-            z2_initial = self.encoder(x2, adj2, M2)
-            refined_adj1 = self.refine_module(z1_initial, adj1, M1)
-            refined_adj2 = self.refine_module(z2_initial, adj2, M2)
-            z1 = self.encoder(x1, refined_adj1, M1)
-            z2 = self.encoder(x2, refined_adj2, M2)
-        else:
-            z1 = self.encoder(x1, adj1, M1)
-            z2 = self.encoder(x2, adj2, M2)
-
-        z = (z1 + z2) / 2
+            adj1 = self.refine_module.drop_forward(x1, adj1)
+            adj2 = self.refine_module.drop_forward(x2, adj2)
+        
+        z1 = self.encoder(x1, adj1, M1)
+        z2 = self.encoder(x2, adj2, M2)
 
         z_view1 = F.normalize(self.multiview_projector(z1), dim=1)
         z_view2 = F.normalize(self.multiview_projector(z2), dim=1)
-        z_cluster = F.normalize(self.cluster_projector(z), dim=1)
         z_multiview = torch.cat([z_view1.unsqueeze(1), z_view2.unsqueeze(1)], dim=1)
 
-        if not hasattr(self, "max_diff") or self.max_diff is None:
-            z_diff = self.diff_classifier(torch.abs(z1 - z2))
-            return z_multiview, z_cluster, z_diff.squeeze()
+        z = (z1 + z2) / 2
 
-        # --- Pair sampling ---
-        N = z.size(0)
-        if labels is not None:
-            labels = labels.view(-1)
-            pos_mask = labels.unsqueeze(0) == labels.unsqueeze(1)
-            neg_mask = ~pos_mask
-            pos_mask.fill_diagonal_(False)
-            neg_mask.fill_diagonal_(False)
-            pos_indices = pos_mask.nonzero(as_tuple=False)
-            neg_indices = neg_mask.nonzero(as_tuple=False)
-        else:
-            sim = F.cosine_similarity(z.unsqueeze(1), z.unsqueeze(0), dim=-1)
-            sim.fill_diagonal_(-1.0)
-            pos_indices = (sim >= 0.5).nonzero(as_tuple=False)
-            neg_indices = (sim < 0.5).nonzero(as_tuple=False)
+        z_cluster = F.normalize(self.cluster_projector(z), dim=1)
 
-        if pos_indices.size(0) > 0:
-            pos_indices = pos_indices[torch.randperm(pos_indices.size(0))[:self.max_diff]]
-        if neg_indices.size(0) > 0:
-            neg_indices = neg_indices[torch.randperm(neg_indices.size(0))[:self.max_diff]]
-
-        pair_indices = torch.cat([pos_indices, neg_indices], dim=0)
-        z_i = z[pair_indices[:, 0]]
-        z_j = z[pair_indices[:, 1]]
-
-        diff_input = torch.abs(z_i - z_j)
-        diff_pred = self.diff_classifier(diff_input).squeeze()
-
-        # Construct binary labels for pairs: 1 = positive, 0 = negative
-        labels_diff = torch.cat([
-            torch.ones(pos_indices.size(0), device=z.device),
-            torch.zeros(neg_indices.size(0), device=z.device)
-        ])
-
-        # Compute BCE loss
-        diff_loss = F.binary_cross_entropy_with_logits(diff_pred, labels_diff)
-
-        return z_multiview, z_cluster, diff_loss, pair_indices
-
-    def DiffLoss(self, pred, labels):
-        return self.diff_loss(pred, labels)
+        return z_multiview, z_cluster
 
     def SelfSupConLoss(
         self, features, labels=None, mask=None, temperature=0.2, contrast_mode="all"
