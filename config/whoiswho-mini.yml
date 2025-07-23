@@ -38,7 +38,7 @@ epochs: 50
 l2_coef:
 - 0.2
 w_diff:
-- 0.5
+- 0.3
 w_cluster:
 - 0.3
 t_multiview:

@@ -146,10 +146,13 @@ class MCCG_Trainer:
                 loss_multiview = model.SelfSupConLoss(
                     embd_multiview, labels, contrast_mode="all", temperature=t_multiview
                 )
-                loss_diff = model.DiffLoss(diff_pred, labels.float())
+
+                cm = onehot_encoder(labels.cpu().numpy())
+                binary_sim = torch.from_numpy((cm @ cm.T).astype("float32")).to(device)
+                loss_diff = model.DiffLoss(diff_pred, binary_sim)
 
                 w_multiview = 1 - w_cluster - w_diff
-                assert w_cluster + w_diff + w_multiview == 1.0
+                assert w_cluster + w_diff + w_multiview == 1.0, "w_cluster + w_diff + w_multiview must be equal 1.0"
 
                 loss_train = (
                     w_cluster * loss_cluster
