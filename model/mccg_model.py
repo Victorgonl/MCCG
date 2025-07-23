@@ -200,8 +200,8 @@ class MCCG(nn.Module):
         else:
             sim = F.cosine_similarity(z.unsqueeze(1), z.unsqueeze(0), dim=-1)
             sim.fill_diagonal_(-1.0)
-            pos_indices = (sim > 0.95).nonzero(as_tuple=False)
-            neg_indices = (sim < 0.5).nonzero(as_tuple=False)
+            pos_indices = (sim > 0.8).nonzero(as_tuple=False)
+            neg_indices = (sim < 0.2).nonzero(as_tuple=False)
 
         if pos_indices.size(0) > 0:
             pos_indices = pos_indices[torch.randperm(pos_indices.size(0))[:self.max_diff]]
