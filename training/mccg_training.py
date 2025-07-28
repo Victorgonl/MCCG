@@ -18,6 +18,9 @@ device = torch.device(
     ("cuda:" + str(args.gpu)) if torch.cuda.is_available() and args.cuda else "cpu"
 )
 
+print("Device:", device)
+print("="*10, "\n")
+
 
 class MCCG_Trainer:
     def __init__(self) -> None:
