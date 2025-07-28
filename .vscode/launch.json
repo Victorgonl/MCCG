@@ -2,12 +2,12 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "whoiswho-mini-refine",
+            "name": "whoiswho-micro-refine",
             "type": "debugpy",
             "request": "launch",
             "program": "main.py",
             "console": "integratedTerminal",
-            "args": ["--config", "config/whoiswho-mini-refine.yml"]
+            "args": ["--config", "config/whoiswho-micro-refine.yml"]
         }
     ]
 }
