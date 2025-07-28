@@ -19,7 +19,7 @@ device = torch.device(
 )
 
 print("Device:", device)
-print("="*10, "\n")
+print("="*15, "\n")
 
 
 class MCCG_Trainer:

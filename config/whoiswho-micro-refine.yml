@@ -1,4 +1,4 @@
-cuda: false
+cuda: true
 gpu: 0
 dataset: whoiswho-micro
 mode: test
