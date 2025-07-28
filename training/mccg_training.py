@@ -188,7 +188,7 @@ class MCCG_Trainer:
 
         predict = get_results(names, pubs, results)
 
-        ground_truth = join(args.save_path, "src", args.mode, args.ground_truth_file)
+        ground_truth = join(args.ground_truth_file)
         pre, rec, f1 = evaluate(predict, ground_truth)
 
         logger.info(
