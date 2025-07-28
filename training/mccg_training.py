@@ -188,8 +188,7 @@ class MCCG_Trainer:
 
         predict = get_results(names, pubs, results)
 
-        ground_truth = join(args.ground_truth_file)
-        pre, rec, f1 = evaluate(predict, ground_truth)
+        pre, rec, f1 = evaluate(predict, args.ground_truth_file)
 
         logger.info(
             f"[{mode.upper()}] AVERAGE: Precision: {pre:.4f} | Recall: {rec:.4f} | F1: {f1:.4f}"
