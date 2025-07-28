@@ -60,7 +60,7 @@ class MCCG_Trainer:
 
             results[name] = []
 
-            label, ft_list, data = load_graph(name, th_a, th_o, th_v)
+            label, ft_list, data = load_graph(name, mode, th_a, th_o, th_v)
             ft_list = ft_list.float().to(device)
             data = data.to(device)
             adj = get_adj(data.edge_index, data.num_nodes)
