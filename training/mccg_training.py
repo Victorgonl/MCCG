@@ -36,8 +36,10 @@ class MCCG_Trainer:
         dim_proj_multiview,
         dim_proj_cluster,
         drop_scheme,
-        drop_feature_thresh,
-        drop_edge_thresh,
+        drop_feature_rate_view1,
+        drop_feature_rate_view2,
+        drop_edge_rate_view1,
+        drop_edge_rate_view2,
         th_a,
         th_o,
         th_v,
@@ -69,27 +71,33 @@ class MCCG_Trainer:
             adj = get_adj(data.edge_index, data.num_nodes)
             M = get_M(adj, t=2)
 
-            # Drop weights
             if drop_scheme == "degree":
                 edge_weights = degree_drop_weights(data).to(device)
-                node_centrality = degree(data.edge_index[1], num_nodes=data.num_nodes)
+                node_deg = degree(data.edge_index[1], num_nodes=data.num_nodes)
+                feature_weights = feature_drop_weights_dense(
+                    ft_list, node_c=node_deg
+                ).to(device)
             elif drop_scheme == "pr":
                 edge_weights = pr_drop_weights(data, aggr="sink", k=200).to(device)
-                node_centrality = compute_pr(data)
+                node_pr = compute_pr(data)
+                feature_weights = feature_drop_weights_dense(
+                    ft_list, node_c=node_pr
+                ).to(device)
             elif drop_scheme == "evc":
                 edge_weights = evc_drop_weights(data).to(device)
-                node_centrality = eigenvector_centrality(data)
+                node_evc = eigenvector_centrality(data)
+                feature_weights = feature_drop_weights_dense(
+                    ft_list, node_c=node_evc
+                ).to(device)
             else:
                 raise ValueError(f"undefined drop scheme: {drop_scheme}.")
 
-            feature_weights = feature_drop_weights_dense(ft_list, node_c=node_centrality).to(device)
-
-            # Generate multiple views
+            # Generate N views dynamically
             x_list, adj_list, M_list = [], [], []
 
             for _ in range(num_views):
-                drop_feat_rate = random.uniform(*drop_feature_thresh)
-                drop_edge_rate = random.uniform(*drop_edge_thresh)
+                drop_feat_rate = random.uniform(0.3, 0.7)
+                drop_edge_rate = random.uniform(0.3, 0.7)
 
                 edge_index = drop_edge_weighted(
                     data.edge_index, edge_weights, p=drop_edge_rate, threshold=0.7
@@ -104,20 +112,19 @@ class MCCG_Trainer:
                 adj_list.append(adj_view)
                 M_list.append(M_view)
 
-            # Model Setup
             encoder = GAT(layer_shape[0], layer_shape[1], layer_shape[2])
             model = MCCG(
                 encoder,
                 dim_hidden=layer_shape[2],
                 dim_proj_multiview=dim_proj_multiview,
                 dim_proj_cluster=dim_proj_cluster,
-                refine=refine,
             )
             model.to(device)
 
-            optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=l2_coef)
+            optimizer = torch.optim.Adam(
+                model.parameters(), lr=args.lr, weight_decay=l2_coef
+            )
 
-            # Training Loop
             for epoch in range(1, args.epochs + 1):
                 model.train()
                 optimizer.zero_grad()
@@ -155,15 +162,17 @@ class MCCG_Trainer:
                 optimizer.step()
 
                 if epoch == args.epochs:
-                    duration = str(timedelta(seconds=int(time.time() - name_start)))
+                    name_end = time.time()
+                    duration_seconds = name_end - name_start
+                    formatted_duration = str(timedelta(seconds=int(duration_seconds)))
+
                     logger.info(
-                        f"Epochs: {epoch}/{args.epochs} | Runtime: {duration} | "
+                        f"Epochs: {epoch}/{args.epochs} | Runtime: {formatted_duration} | "
                         f"MultiView Loss: {loss_multiview.item():.4f} | "
                         f"Cluster Loss: {loss_cluster.item():.4f} | Total Loss: {loss_train.item():.4f}"
-                        f"\n{'-' * 100}"
+                        f"\n{'-'*100}"
                     )
 
-            # Evaluation
             with torch.no_grad():
                 model.eval()
                 embd = model.encoder(ft_list, adj, M)
@@ -185,13 +194,16 @@ class MCCG_Trainer:
                 results[name] = pred
 
         predict = get_results(names, pubs, results)
+
         pre, rec, f1 = evaluate(predict, args.ground_truth_file, print_names=True)
 
         logger.info(
             f"[{mode.upper()}] AVERAGE: Precision: {pre:.4f} | Recall: {rec:.4f} | F1: {f1:.4f}"
         )
 
-        with open(join(".expert_record", args.predict_result), "a", encoding="utf-8") as f:
+        with open(
+            join(".expert_record", args.predict_result), "a", encoding="utf-8"
+        ) as f:
             msg = f"combin_num: {combin_num}, pre: {pre:.4f}, rec: {rec:.4f}, f1: {f1:.4f}\n"
             logger.info(msg)
             f.write(msg)
