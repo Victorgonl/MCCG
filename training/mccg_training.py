@@ -50,7 +50,7 @@ class MCCG_Trainer:
         t_multiview,
         t_cluster,
         refine,
-        num_views=10,
+        num_views=3,
     ):
 
         names, pubs = load_dataset(mode)
