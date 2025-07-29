@@ -48,7 +48,7 @@ class MCCG_Trainer:
         w_cluster,
         t_multiview,
         t_cluster,
-        refine,
+        encoder
     ):
 
         names, pubs = load_dataset(mode)
@@ -110,14 +110,13 @@ class MCCG_Trainer:
                 ft_list, feature_weights, drop_feature_rate_view2, threshold=0.7
             )
 
-            encoder = GAT(layer_shape[0], layer_shape[1], layer_shape[2])
+            #encoder = GAT(layer_shape[0], layer_shape[1], layer_shape[2])
 
             model = MCCG(
                 encoder,
                 dim_hidden=layer_shape[2],
                 dim_proj_multiview=dim_proj_multiview,
                 dim_proj_cluster=dim_proj_cluster,
-                refine=refine,
             )
             model.to(device)
 

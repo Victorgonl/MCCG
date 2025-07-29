@@ -9,6 +9,7 @@ from dataset.preprocess_data import preprocess_data
 from dataset.save_results import check_mkdir
 from logger import set_log
 from params import set_params
+from training.diff_training import DiffModel, DiffTrainer
 from training.mccg_training import MCCG_Trainer
 
 args_dict, args = set_params()
@@ -76,6 +77,29 @@ if __name__ == "__main__":
               f"-- refine:                      {args.refine}\n"
         logger.info(msg)
 
+        diff_trainer = DiffTrainer()
+        encoder = diff_trainer.fit(logger=logger,
+                    mode=args.mode,
+                    combin_num=count,
+                    layer_shape=args.layer_shape,
+                    dim_proj_multiview=args.dim_proj_multiview,
+                    dim_proj_cluster=args.dim_proj_cluster,
+                    drop_scheme=param['drop_scheme'],
+                    drop_feature_rate_view1=param['drop_feature_rate_view1'],
+                    drop_feature_rate_view2=param['drop_feature_rate_view2'],
+                    drop_edge_rate_view1=param['drop_edge_rate_view1'],
+                    drop_edge_rate_view2=param['drop_edge_rate_view2'],
+                    th_a=param['th_a'],
+                    th_o=param['th_o'],
+                    th_v=param['th_v'],
+                    db_eps=param['db_eps'],
+                    db_min=param['db_min'],
+                    l2_coef=param['l2_coef'],
+                    w_cluster=param['w_cluster'],
+                    t_multiview=param['t_multiview'],
+                    t_cluster=param['t_cluster'],
+                    )
+
         trainer = MCCG_Trainer()
         trainer.fit(logger=logger,
                     mode=args.mode,
@@ -97,7 +121,7 @@ if __name__ == "__main__":
                     w_cluster=param['w_cluster'],
                     t_multiview=param['t_multiview'],
                     t_cluster=param['t_cluster'],
-                    refine=args.refine
+                    encoder=encoder
                     )
 
         end_time = time.time()
