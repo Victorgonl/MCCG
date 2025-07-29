@@ -257,7 +257,7 @@ class DiffTrainer:
             logger.info(msg)
             f.write(msg)
 
-        return encoder
+        return model.encoder
 
 
 def evaluate(pred_labels: torch.Tensor, true_labels: torch.Tensor):
