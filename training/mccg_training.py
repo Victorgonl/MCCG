@@ -1,4 +1,3 @@
-import random
 import time
 from datetime import datetime, timedelta
 
@@ -20,7 +19,7 @@ device = torch.device(
 )
 
 print("Device:", device)
-print("=" * 15, "\n")
+print("="*15, "\n")
 
 
 class MCCG_Trainer:
@@ -50,7 +49,6 @@ class MCCG_Trainer:
         t_multiview,
         t_cluster,
         refine,
-        num_views=4,
     ):
 
         names, pubs = load_dataset(mode)
@@ -92,32 +90,34 @@ class MCCG_Trainer:
             else:
                 raise ValueError(f"undefined drop scheme: {drop_scheme}.")
 
-            # Generate N views dynamically
-            x_list, adj_list, M_list = [], [], []
+            edge_index1 = drop_edge_weighted(
+                data.edge_index, edge_weights, p=drop_edge_rate_view1, threshold=0.7
+            )
+            edge_index2 = drop_edge_weighted(
+                data.edge_index, edge_weights, p=drop_edge_rate_view2, threshold=0.7
+            )
 
-            for _ in range(num_views):
-                drop_feat_rate = random.uniform(0.3, 0.7)
-                drop_edge_rate = random.uniform(0.3, 0.7)
+            adj1 = get_adj(edge_index1, data.num_nodes)
+            adj2 = get_adj(edge_index2, data.num_nodes)
 
-                edge_index = drop_edge_weighted(
-                    data.edge_index, edge_weights, p=drop_edge_rate, threshold=0.7
-                )
-                adj_view = get_adj(edge_index, data.num_nodes)
-                M_view = get_M(adj_view, t=2)
-                x_view = drop_feature_weighted_2(
-                    ft_list, feature_weights, drop_feat_rate, threshold=0.7
-                )
+            M1 = get_M(adj1, t=2)
+            M2 = get_M(adj2, t=2)
 
-                x_list.append(x_view)
-                adj_list.append(adj_view)
-                M_list.append(M_view)
+            x1 = drop_feature_weighted_2(
+                ft_list, feature_weights, drop_feature_rate_view1, threshold=0.7
+            )
+            x2 = drop_feature_weighted_2(
+                ft_list, feature_weights, drop_feature_rate_view2, threshold=0.7
+            )
 
             encoder = GAT(layer_shape[0], layer_shape[1], layer_shape[2])
+
             model = MCCG(
                 encoder,
                 dim_hidden=layer_shape[2],
                 dim_proj_multiview=dim_proj_multiview,
                 dim_proj_cluster=dim_proj_cluster,
+                refine=refine,
             )
             model.to(device)
 
@@ -129,7 +129,7 @@ class MCCG_Trainer:
                 model.train()
                 optimizer.zero_grad()
 
-                embd_multiview, embd_cluster = model(x_list, adj_list, M_list)
+                embd_multiview, embd_cluster = model(x1, adj1, M1, x2, adj2, M2)
 
                 dis = pairwise_distances(
                     embd_cluster.cpu().detach().numpy(), metric="cosine"
@@ -149,13 +149,10 @@ class MCCG_Trainer:
                     temperature=t_cluster,
                 )
                 loss_multiview = model.SelfSupConLoss(
-                    embd_multiview,
-                    labels,
-                    contrast_mode="all",
-                    temperature=t_multiview,
+                    embd_multiview, labels, contrast_mode="all", temperature=t_multiview
                 )
-
-                w_multiview = 1 - w_cluster
+                
+                w_multiview = (1 - w_cluster)
                 loss_train = w_cluster * loss_cluster + w_multiview * loss_multiview
 
                 loss_train.backward()
