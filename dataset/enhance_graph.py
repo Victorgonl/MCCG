@@ -148,6 +148,28 @@ def feature_drop_weights_dense(x, node_c):
     return s
 
 
+def drop_edge_weighted_by_label(edge_index, edge_weights, p: float, label):
+    """
+    Drop edges based on edge importance weights and a drop probability,
+    conditioned on node labels to preserve label-consistent connections.
+
+    Args:
+        edge_index (torch.Tensor): Edge indices [2, num_edges].
+        edge_weights (torch.Tensor): Edge weights.
+        label (torch.Tensor): Node labels [num_nodes].
+        p (float): Base drop probability.
+
+    Returns:
+        torch.Tensor: Filtered edge indices after dropout.
+    """
+    edge_weights = edge_weights / edge_weights.mean() * p
+    src, dst = edge_index
+    label_mask = label[src] == label[dst]
+    sel_mask = torch.bernoulli(1.0 - edge_weights).to(torch.bool)
+    final_mask = sel_mask | label_mask
+    return edge_index[:, final_mask]
+
+
 def drop_edge_weighted(edge_index, edge_weights, p: float, threshold: float = 1.0):
     """
     Drop edges based on edge importance weights and a drop probability.

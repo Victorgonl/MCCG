@@ -156,7 +156,7 @@ class LowHigh_S_CosineGraphLearnModule(nn.Module):
 
 class MCCG(nn.Module):
     def __init__(
-        self, encoder, dim_hidden, dim_proj_multiview, dim_proj_cluster, refine=False
+        self, encoder, dim_hidden, dim_proj_multiview, dim_proj_cluster
     ):
         super(MCCG, self).__init__()
         self.dim_hidden = dim_hidden
@@ -186,29 +186,25 @@ class MCCG(nn.Module):
             nn.Linear(8, 1),
             nn.Sigmoid(),
         )
-        if refine:
-            self.refine_module = ARCCModel(hidden=dim_hidden)
-        else:
-            self.refine_module = None
 
-    def forward(self, x1, adj1, M1, x2, adj2, M2):
+    def forward(self, x_list, adj_list, M_list):
+        # Encode all views
+        z_list = [self.encoder(x, adj, M) for x, adj, M in zip(x_list, adj_list, M_list)]
 
-        z1 = self.encoder(x1, adj1, M1)
-        z2 = self.encoder(x2, adj2, M2)
+        # Project each encoded view using multiview projector and normalize
+        z_view_list = [F.normalize(self.multiview_projector(z), dim=1) for z in z_list]
 
-        z_view1 = F.normalize(self.multiview_projector(z1), dim=1)
-        z_view2 = F.normalize(self.multiview_projector(z2), dim=1)
-        z_multiview = torch.cat([z_view1.unsqueeze(1), z_view2.unsqueeze(1)], dim=1)
+        # Stack the normalized projected views along a new dimension
+        z_multiview = torch.stack([z.unsqueeze(1) for z in z_view_list], dim=1)
 
-        z = (z1 + z2) / 2
-        z_adj = ((adj1 + adj2) > 0).float()
+        # Average the raw embeddings
+        z_avg = sum(z_list) / len(z_list)
 
-        if self.refine_module is not None:
-            _, _, z, _ = self.refine_module(z, z_adj)
-
-        z_cluster = F.normalize(self.cluster_projector(z), dim=1)
+        # Final clustering projection
+        z_cluster = F.normalize(self.cluster_projector(z_avg), dim=1)
 
         return z_multiview, z_cluster
+
 
     def SelfSupConLoss(
         self, features, labels=None, mask=None, temperature=0.2, contrast_mode="all"
@@ -307,93 +303,3 @@ class MCCG(nn.Module):
         loss = loss.view(anchor_count, batch_size).mean()
 
         return loss
-
-
-class GraphEmbedding(nn.Module):
-    def __init__(self, in_features, out_features):
-        super(GraphEmbedding, self).__init__()
-        self.linear = nn.Linear(in_features, out_features)
-
-    def forward(self, adj, features):
-        I = torch.eye(adj.size(0)).to(adj.device)
-        adj = adj + I
-        D_inv_sqrt = torch.diag(torch.pow(adj.sum(1), -0.5))
-        adj_norm = D_inv_sqrt @ adj @ D_inv_sqrt
-        out = adj_norm @ features
-        out = self.linear(out)
-        return F.relu(out)
-
-
-class ARCCModel(nn.Module):
-    def __init__(
-        self,
-        hidden,
-        dropout=0.5,
-        gcn_layer=1,
-        low_sim_threshold=0.5,
-        high_sim_threshold=0.9,
-    ):
-        super(ARCCModel, self).__init__()
-        self.dropout = nn.Dropout(dropout)
-        self.gcn_layer = gcn_layer
-
-        self.Sfc1 = nn.Linear(hidden, hidden)
-        self.Sfc2 = nn.Linear(hidden, hidden)
-
-        self.Rfc1 = nn.Linear(hidden, hidden)
-        self.Rfc2 = nn.Linear(hidden, hidden)
-
-        self.W = nn.ModuleList()
-        for layer in range(self.gcn_layer):
-            self.W.append(nn.Linear(hidden, hidden))
-
-        self.weight1 = torch.nn.Linear(hidden, 1)
-        self.weight2 = torch.nn.Linear(hidden, 1)
-
-        self.SRfc1 = nn.Linear(hidden, hidden)
-        self.SRfc2 = nn.Linear(hidden, hidden)
-        self.structureLearn = LowHigh_S_CosineGraphLearnModule(
-            low_sim_threshold, high_sim_threshold
-        )
-
-        self.adj_embbeder = GraphEmbedding(in_features=hidden, out_features=hidden)
-
-    def forward(self, features, adj):
-
-        features = self.dropout(features)
-        features = torch.relu(self.Sfc1(features))
-        features = self.Sfc2(features)
-
-        # refine graph structure
-        refine_adj_matrix_tensor = self.structureLearn(features, adj)
-        init_node_embeding = self.adj_embbeder(adj, features)
-        # add_adj_tensor add_adj_tensor.tolist()
-
-        denom = refine_adj_matrix_tensor.sum(1).unsqueeze(1) + 1
-        for l in range(self.gcn_layer):
-            init_node_embeding = self.dropout(init_node_embeding)
-            Ax = refine_adj_matrix_tensor.mm(
-                init_node_embeding
-            )  ## N x N  times N x h  = Nxh
-            AxW = self.W[l](Ax)  ## N x m
-            AxW = AxW + self.W[l](init_node_embeding)  ## self loop  N x h
-            AxW = AxW / denom
-            init_node_embeding = torch.relu(AxW)
-
-        # rel_X1 =
-        rel_X1 = self.dropout(init_node_embeding)
-        rel_X1 = F.relu(self.Rfc1(rel_X1))
-        rel_X1_final = self.Rfc2(rel_X1)
-
-        weight1 = torch.sigmoid(self.weight1(features))
-        weight2 = torch.sigmoid(self.weight2(rel_X1_final))
-        weight1 = weight1 / (weight1 + weight2)
-        weight2 = 1 - weight1
-
-        output = weight1 * features + weight2 * rel_X1_final
-
-        output = self.dropout(output)
-        output = torch.relu(self.SRfc1(output))
-        output = self.SRfc2(output)
-
-        return features, rel_X1_final, output, refine_adj_matrix_tensor

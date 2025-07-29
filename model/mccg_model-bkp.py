@@ -1,0 +1,398 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class GATLayer(nn.Module):
+    """
+    Simple GAT layer, similar to https://arxiv.org/abs/1710.10903
+    """
+
+    def __init__(self, in_features, out_features, alpha):
+        super(GATLayer, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.alpha = alpha
+
+        self.W = nn.Parameter(torch.zeros(size=(in_features, out_features)))
+        nn.init.xavier_uniform_(self.W.data, gain=1.414)
+
+        self.a_self = nn.Parameter(torch.zeros(size=(out_features, 1)))
+        nn.init.xavier_uniform_(self.a_self.data, gain=1.414)
+
+        self.a_neighs = nn.Parameter(torch.zeros(size=(out_features, 1)))
+        nn.init.xavier_uniform_(self.a_neighs.data, gain=1.414)
+
+        self.leakyrelu = nn.LeakyReLU(self.alpha)
+
+    def forward(self, input, adj, M, concat=True):
+        h = torch.mm(input, self.W)
+
+        attn_for_self = torch.mm(h, self.a_self)  # (N,1)
+        attn_for_neighs = torch.mm(h, self.a_neighs)  # (N,1)
+        attn_dense = attn_for_self + torch.transpose(attn_for_neighs, 0, 1)
+        attn_dense = torch.mul(attn_dense, M)
+        attn_dense = self.leakyrelu(attn_dense)  # (N,N)
+
+        zero_vec = -9e15 * torch.ones_like(adj)
+        adj = torch.where(adj > 0, attn_dense, zero_vec)
+        attention = F.softmax(adj, dim=1)
+        h_prime = torch.matmul(attention, h)
+
+        if concat:
+            return F.elu(h_prime)
+        else:
+            return h_prime
+
+
+class GAT(nn.Module):
+    def __init__(self, dim_input, dim_hidden, dim_output, alpha=0.2):
+        super(GAT, self).__init__()
+        self.conv1 = GATLayer(dim_input, dim_hidden, alpha)
+        self.conv2 = GATLayer(dim_hidden, dim_output, alpha)
+
+    def forward(self, x, adj, M):
+        h = self.conv1(x, adj, M)
+        h = F.dropout(h, 0.6, training=self.training)
+        h = self.conv2(h, adj, M)
+
+        return h
+
+
+""" class RefineModule(nn.Module):
+    def __init__(
+        self, in_features, hidden_features, out_features, alpha=0.2, hard_cluster=False, threshold=0.5
+    ):
+        super(RefineModule, self).__init__()
+        self.refine_attention_layer = GATLayer(in_features, hidden_features, alpha)
+        self.output_transform = nn.Linear(hidden_features, out_features)
+        self.hard_cluster = hard_cluster
+        self.threshold = threshold
+
+    def forward(self, features, adj_initial, M):
+        refined_attention_logits = self.refine_attention_layer(
+            features, adj_initial, M, concat=False
+        )
+        refined_scores = self.output_transform(refined_attention_logits)
+        refined_scores = torch.sigmoid(refined_scores)
+
+        if self.hard_cluster:
+            binary_mask = (refined_scores > self.threshold).float()
+            refined_adj = adj_initial * binary_mask
+        else:
+            refined_adj = adj_initial * refined_scores
+
+        return refined_adj """
+
+
+class RefineModule(nn.Module):
+    def __init__(
+        self,
+        in_features,
+        hidden_features,
+        out_features,
+        alpha=0.2,
+        hard_cluster=False,
+        threshold=0.5,
+    ):
+        super(RefineModule, self).__init__()
+        # use a simple MLP to process the absolute feature differences
+        self.refine_mlp = nn.Sequential(
+            nn.Linear(in_features, hidden_features),
+            nn.LeakyReLU(alpha),
+            nn.Linear(hidden_features, out_features),
+            nn.Sigmoid(),
+        )
+        self.hard_cluster = hard_cluster
+        self.threshold = threshold
+
+    def forward(self, features, adj_initial, M):
+        # calculate pairwise absolute differences between features
+        n_nodes = features.size(0)
+        features_expanded1 = features.unsqueeze(1).expand(-1, n_nodes, -1)  # [N, N, D]
+        features_expanded2 = features.unsqueeze(0).expand(n_nodes, -1, -1)  # [N, N, D]
+        feature_diffs = torch.abs(features_expanded1 - features_expanded2)  # [N, N, D]
+
+        # process differences through MLP to get refinement scores
+        refined_scores = self.refine_mlp(feature_diffs).squeeze(-1)  # [N, N]
+
+        # apply the mask M
+        refined_scores = refined_scores * M
+
+        if self.hard_cluster:
+            binary_mask = (refined_scores > self.threshold).float()
+            refined_adj = adj_initial * binary_mask
+        else:
+            refined_adj = adj_initial * refined_scores
+
+        return refined_adj
+
+
+class LowHigh_S_CosineGraphLearnModule(nn.Module):
+    def __init__(self, low_sim_threshold=0.20, high_sim_threshold=0.80):
+        super(LowHigh_S_CosineGraphLearnModule, self).__init__()
+        self.low_threshold = low_sim_threshold
+        self.high_threshold = high_sim_threshold
+
+    def forward(self, semantic_x, adj):
+        semantic_cos_sim = F.cosine_similarity(
+            semantic_x.unsqueeze(1), semantic_x.unsqueeze(0), dim=2
+        )
+        semantic_add_adj = torch.where(
+            semantic_cos_sim > self.high_threshold,
+            torch.ones_like(adj, requires_grad=semantic_cos_sim.requires_grad),
+            adj,
+        )
+        semantic_add_rm_adj = torch.where(
+            semantic_cos_sim < self.low_threshold,
+            torch.zeros_like(adj, requires_grad=semantic_cos_sim.requires_grad),
+            semantic_add_adj,
+        )
+        refine_adj = semantic_add_rm_adj - torch.diag_embed(
+            torch.diag(semantic_add_rm_adj)
+        )
+        return refine_adj
+
+
+class MCCG(nn.Module):
+    def __init__(
+        self, encoder, dim_hidden, dim_proj_multiview, dim_proj_cluster, refine=False
+    ):
+        super(MCCG, self).__init__()
+        self.dim_hidden = dim_hidden
+        self.encoder = encoder
+        self.multiview_projector = nn.Sequential(
+            nn.Linear(dim_hidden, dim_hidden),
+            nn.ELU(),
+            nn.Linear(dim_hidden, dim_proj_multiview),
+        )
+        self.cluster_projector = nn.Sequential(
+            nn.Linear(dim_hidden, dim_hidden),
+            nn.ELU(),
+            nn.Linear(dim_hidden, dim_proj_cluster),
+        )
+        self.diff_classifier = nn.Sequential(
+            nn.Linear(dim_hidden, dim_hidden // 2),
+            nn.ReLU(),
+            nn.Linear(dim_hidden // 2, 1),
+        )
+        self.project = nn.Linear(dim_proj_cluster, 32)
+        self.MLP = nn.Sequential(
+            nn.BatchNorm1d(32),
+            nn.Tanh(),
+            nn.Linear(32, 8),
+            nn.BatchNorm1d(8),
+            nn.Tanh(),
+            nn.Linear(8, 1),
+            nn.Sigmoid(),
+        )
+        if refine:
+            self.refine_module = ARCCModel(hidden=dim_hidden)
+        else:
+            self.refine_module = None
+
+    def forward(self, x1, adj1, M1, x2, adj2, M2):
+
+        z1 = self.encoder(x1, adj1, M1)
+        z2 = self.encoder(x2, adj2, M2)
+
+        z_view1 = F.normalize(self.multiview_projector(z1), dim=1)
+        z_view2 = F.normalize(self.multiview_projector(z2), dim=1)
+        z_multiview = torch.cat([z_view1.unsqueeze(1), z_view2.unsqueeze(1)], dim=1)
+
+        z = (z1 + z2) / 2
+        z_adj = ((adj1 + adj2) > 0).float()
+
+        if self.refine_module is not None:
+            _, _, z, _ = self.refine_module(z, z_adj)
+
+        z_cluster = F.normalize(self.cluster_projector(z), dim=1)
+
+        return z_multiview, z_cluster
+
+    def SelfSupConLoss(
+        self, features, labels=None, mask=None, temperature=0.2, contrast_mode="all"
+    ):
+        """Compute loss for model. If both `labels` and `mask` are None,
+        it degenerates to SimCLR unsupervised loss:
+        https://arxiv.org/pdf/2002.05709.pdf
+
+        Args:
+            features: hidden vector of shape [bsz, n_views, ...].
+            labels: ground truth of shape [bsz].
+            mask: contrastive mask of shape [bsz, bsz], mask_{i,j}=1 if sample j
+                has the same class as sample i. Can be asymmetric.
+        Returns:
+            A loss scalar.
+        """
+        device = features.device
+
+        if len(features.shape) < 3:
+            raise ValueError(
+                "`features` needs to be [bsz, n_views, ...],"
+                "at least 3 dimensions are required"
+            )
+        if len(features.shape) > 3:
+            features = features.view(features.shape[0], features.shape[1], -1)
+
+        batch_size = features.shape[0]
+        if labels is not None and mask is not None:
+            raise ValueError("Cannot define both `labels` and `mask`")
+        elif labels is None and mask is None:
+            mask = torch.eye(batch_size, dtype=torch.float32).to(device)
+        elif labels is not None:
+            labels = labels.contiguous().view(-1, 1)
+            if labels.shape[0] != batch_size:
+                raise ValueError("Num of labels does not match num of features")
+            mask = torch.eq(labels, labels.T).float().to(device)
+        else:
+            mask = mask.float().to(device)
+
+        contrast_count = features.shape[1]
+        contrast_feature = torch.cat(torch.unbind(features, dim=1), dim=0)
+        if contrast_mode == "one":
+            anchor_feature = features[:, 0]
+            anchor_count = 1
+        elif contrast_mode == "all":
+            anchor_feature = contrast_feature
+            anchor_count = contrast_count
+        else:
+            raise ValueError("Unknown mode: {}".format(contrast_mode))
+
+        # compute logits
+        anchor_dot_contrast = torch.div(
+            torch.matmul(anchor_feature, contrast_feature.T), temperature
+        )
+        # for numerical stability
+        logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
+        logits = anchor_dot_contrast - logits_max.detach()
+        exp_logits = torch.exp(logits)
+
+        # tile mask
+        mask = mask.repeat(anchor_count, contrast_count)
+        # mask-out self-contrast cases
+        logits_mask = torch.scatter(
+            torch.ones_like(mask),
+            1,
+            torch.arange(batch_size * anchor_count).view(-1, 1).to(device),
+            0,
+        )
+        mask = mask * logits_mask
+
+        # compute log_prob
+        exp_logits = exp_logits * logits_mask
+        if contrast_mode == "one":
+            w_anchor = self.project(anchor_feature)
+            w = w_anchor
+            N = w_anchor.size(0)
+            w_anchor = w_anchor.unsqueeze(1).repeat(1, N, 1).reshape(N * N, -1)
+            w = w.unsqueeze(0).repeat(N, 1, 1).reshape(N * N, -1)
+            weight = w_anchor + w
+            weight = self.MLP(weight).reshape(N, N)
+            weight = weight / temperature
+
+            exp_logits = torch.mul(exp_logits, weight)
+            logits = exp_logits
+
+        log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
+
+        # compute mean of log-likelihood over positive
+        # modified to handle edge cases when there is no positive pair
+        mask_pos_pairs = mask.sum(1)
+        mask_pos_pairs = torch.where(mask_pos_pairs < 1e-6, 1, mask_pos_pairs)
+        mean_log_prob_pos = (mask * log_prob).sum(1) / mask_pos_pairs
+
+        # loss
+        loss = -mean_log_prob_pos / temperature
+        loss = loss.view(anchor_count, batch_size).mean()
+
+        return loss
+
+
+class GraphEmbedding(nn.Module):
+    def __init__(self, in_features, out_features):
+        super(GraphEmbedding, self).__init__()
+        self.linear = nn.Linear(in_features, out_features)
+
+    def forward(self, adj, features):
+        I = torch.eye(adj.size(0)).to(adj.device)
+        adj = adj + I
+        D_inv_sqrt = torch.diag(torch.pow(adj.sum(1), -0.5))
+        adj_norm = D_inv_sqrt @ adj @ D_inv_sqrt
+        out = adj_norm @ features
+        out = self.linear(out)
+        return F.relu(out)
+
+
+class ARCCModel(nn.Module):
+    def __init__(
+        self,
+        hidden,
+        dropout=0.5,
+        gcn_layer=1,
+        low_sim_threshold=0.5,
+        high_sim_threshold=0.9,
+    ):
+        super(ARCCModel, self).__init__()
+        self.dropout = nn.Dropout(dropout)
+        self.gcn_layer = gcn_layer
+
+        self.Sfc1 = nn.Linear(hidden, hidden)
+        self.Sfc2 = nn.Linear(hidden, hidden)
+
+        self.Rfc1 = nn.Linear(hidden, hidden)
+        self.Rfc2 = nn.Linear(hidden, hidden)
+
+        self.W = nn.ModuleList()
+        for layer in range(self.gcn_layer):
+            self.W.append(nn.Linear(hidden, hidden))
+
+        self.weight1 = torch.nn.Linear(hidden, 1)
+        self.weight2 = torch.nn.Linear(hidden, 1)
+
+        self.SRfc1 = nn.Linear(hidden, hidden)
+        self.SRfc2 = nn.Linear(hidden, hidden)
+        self.structureLearn = LowHigh_S_CosineGraphLearnModule(
+            low_sim_threshold, high_sim_threshold
+        )
+
+        self.adj_embbeder = GraphEmbedding(in_features=hidden, out_features=hidden)
+
+    def forward(self, features, adj):
+
+        features = self.dropout(features)
+        features = torch.relu(self.Sfc1(features))
+        features = self.Sfc2(features)
+
+        # refine graph structure
+        refine_adj_matrix_tensor = self.structureLearn(features, adj)
+        init_node_embeding = self.adj_embbeder(adj, features)
+        # add_adj_tensor add_adj_tensor.tolist()
+
+        denom = refine_adj_matrix_tensor.sum(1).unsqueeze(1) + 1
+        for l in range(self.gcn_layer):
+            init_node_embeding = self.dropout(init_node_embeding)
+            Ax = refine_adj_matrix_tensor.mm(
+                init_node_embeding
+            )  ## N x N  times N x h  = Nxh
+            AxW = self.W[l](Ax)  ## N x m
+            AxW = AxW + self.W[l](init_node_embeding)  ## self loop  N x h
+            AxW = AxW / denom
+            init_node_embeding = torch.relu(AxW)
+
+        rel_X1 = self.dropout(init_node_embeding)
+        rel_X1 = F.relu(self.Rfc1(rel_X1))
+        rel_X1_final = self.Rfc2(rel_X1)
+
+        weight1 = torch.sigmoid(self.weight1(features))
+        weight2 = torch.sigmoid(self.weight2(rel_X1_final))
+        weight1 = weight1 / (weight1 + weight2)
+        weight2 = 1 - weight1
+
+        output = weight1 * features + weight2 * rel_X1_final
+
+        output = self.dropout(output)
+        output = torch.relu(self.SRfc1(output))
+        output = self.SRfc2(output)
+
+        return features, rel_X1_final, output, refine_adj_matrix_tensor

@@ -34,7 +34,7 @@ drop_edge_rate_view2:
 - 0.5
 seed: 1
 lr: 0.0001
-epochs: 100
+epochs: 50
 l2_coef:
 - 0.2
 w_cluster:
