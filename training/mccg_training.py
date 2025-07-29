@@ -19,7 +19,7 @@ device = torch.device(
 )
 
 print("Device:", device)
-print("="*15, "\n")
+print("=" * 15, "\n")
 
 
 class MCCG_Trainer:
@@ -48,7 +48,7 @@ class MCCG_Trainer:
         w_cluster,
         t_multiview,
         t_cluster,
-        supervised=True
+        semi_supervised=True,
     ):
 
         names, pubs = load_dataset(mode)
@@ -128,25 +128,63 @@ class MCCG_Trainer:
                 model.train()
                 optimizer.zero_grad()
 
+                # Encode the original graph features
                 embd_multiview, embd_cluster = model(x1, adj1, M1, x2, adj2, M2)
 
-                dis = pairwise_distances(
-                    embd_cluster.cpu().detach().numpy(), metric="cosine"
-                )
+                if semi_supervised:
+                    # Pseudo-labels from HDBSCAN on current graph
+                    dis = pairwise_distances(
+                        ft_list.cpu().detach().numpy(), metric="cosine"
+                    )
+                    pseudo_labels = hdbscan.HDBSCAN(
+                        cluster_selection_epsilon=db_eps,
+                        min_samples=db_min,
+                        min_cluster_size=db_min,
+                        metric="precomputed",
+                    ).fit_predict(dis.astype("double"))
 
-                if supervised:
-                    labels = get_true_labels(args.ground_truth_file, name)
-                    labels = np.array(labels)
+                    # Load known negatives from another dataset/name
+                    neg_name = next(n for n in names if n != name)
+                    _, neg_ft_list, _ = load_graph(neg_name, mode, th_a, th_o, th_v)
+                    neg_ft_list = neg_ft_list.float().to(device)
+
+                    # Assign dummy labels to negatives (to force contrastive separation)
+                    neg_labels = np.arange(
+                        100000, 100000 + neg_ft_list.shape[0], dtype=np.int64
+                    )
+
+                    # Encode negative samples without graph structure (standalone features)
+                    with torch.no_grad():
+                        neg_size = neg_ft_list.shape[0]
+                        neg_adj = torch.eye(neg_size).to(device)
+                        neg_M = torch.eye(neg_size).to(device)
+                        neg_embd_multiview, neg_embd_cluster = model(
+                            neg_ft_list, neg_adj, neg_M, neg_ft_list, neg_adj, neg_M
+                        )
+
+                    # Concatenate positive and negative embeddings
+                    embd_multiview = torch.cat(
+                        [embd_multiview, neg_embd_multiview], dim=0
+                    )
+                    embd_cluster = torch.cat([embd_cluster, neg_embd_cluster], dim=0)
+
+                    # Merge labels
+                    labels_full = np.concatenate([pseudo_labels, neg_labels], axis=0)
+                    labels = torch.from_numpy(labels_full).to(device)
+
                 else:
+                    dis = pairwise_distances(
+                        embd_cluster.cpu().detach().numpy(), metric="cosine"
+                    )
                     labels = hdbscan.HDBSCAN(
-                    cluster_selection_epsilon=db_eps,
-                    min_samples=db_min,
-                    min_cluster_size=db_min,
-                    metric="precomputed",
-                ).fit_predict(dis.astype("double"))
-                    
-                labels = torch.from_numpy(labels).to(device)
+                        cluster_selection_epsilon=db_eps,
+                        min_samples=db_min,
+                        min_cluster_size=db_min,
+                        metric="precomputed",
+                    ).fit_predict(dis.astype("double"))
+                    labels = torch.from_numpy(labels).to(device)
 
+                # Loss computation
                 loss_cluster = model.SelfSupConLoss(
                     embd_cluster.unsqueeze(1),
                     labels,
@@ -154,10 +192,13 @@ class MCCG_Trainer:
                     temperature=t_cluster,
                 )
                 loss_multiview = model.SelfSupConLoss(
-                    embd_multiview, labels, contrast_mode="all", temperature=t_multiview
+                    embd_multiview,
+                    labels,
+                    contrast_mode="all",
+                    temperature=t_multiview,
                 )
-                
-                w_multiview = (1 - w_cluster)
+
+                w_multiview = 1 - w_cluster
                 loss_train = w_cluster * loss_cluster + w_multiview * loss_multiview
 
                 loss_train.backward()
@@ -211,28 +252,4 @@ class MCCG_Trainer:
             f.write(msg)
 
 
-def get_true_labels(ground_truth, name):
-    """
-    Extract the true labels for a specific name from ground_truth data.
 
-    Args:
-        ground_truth (dict or str): Ground truth data (dict or path to JSON file).
-        name (str): Name key for which to retrieve true labels.
-
-    Returns:
-        pubs (list): List of paper IDs.
-        true_labels (list): List of corresponding true labels.
-    """
-    if isinstance(ground_truth, str):
-        ground_truth = load_json(ground_truth)
-
-    pubs = []
-    true_labels = []
-    ilabel = 0
-
-    for aid in ground_truth[name]:
-        pubs.extend(ground_truth[name][aid])
-        true_labels.extend([ilabel] * len(ground_truth[name][aid]))
-        ilabel += 1
-
-    return true_labels

@@ -85,6 +85,33 @@ def pairwise_evaluate(correct_labels, pred_labels):
     return pairwise_precision, pairwise_recall, pairwise_f1
 
 
+def get_true_labels(ground_truth, name):
+    """
+    Extract the true labels for a specific name from ground_truth data.
+
+    Args:
+        ground_truth (dict or str): Ground truth data (dict or path to JSON file).
+        name (str): Name key for which to retrieve true labels.
+
+    Returns:
+        pubs (list): List of paper IDs.
+        true_labels (list): List of corresponding true labels.
+    """
+    if isinstance(ground_truth, str):
+        ground_truth = load_json(ground_truth)
+
+    pubs = []
+    true_labels = []
+    ilabel = 0
+
+    for aid in ground_truth[name]:
+        pubs.extend(ground_truth[name][aid])
+        true_labels.extend([ilabel] * len(ground_truth[name][aid]))
+        ilabel += 1
+
+    return true_labels
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Evaluate predictions against ground truth."
