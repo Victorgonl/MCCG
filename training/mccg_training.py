@@ -144,7 +144,7 @@ class MCCG_Trainer:
                     ).fit_predict(dis.astype("double"))
 
                     # Load known negatives from another dataset/name
-                    neg_name = next(n for n in names if n != name)
+                    neg_name = names[(p + 1) % len(p)]
                     _, neg_ft_list, _ = load_graph(neg_name, mode, th_a, th_o, th_v)
                     neg_ft_list = neg_ft_list.float().to(device)
 
@@ -250,6 +250,3 @@ class MCCG_Trainer:
             msg = f"combin_num: {combin_num}, pre: {pre:.4f}, rec: {rec:.4f}, f1: {f1:.4f}\n"
             logger.info(msg)
             f.write(msg)
-
-
-
