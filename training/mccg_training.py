@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import hdbscan
 from sklearn.metrics.pairwise import pairwise_distances
 from dataset.enhance_graph import *
-from dataset.load_data import load_dataset, load_graph
+from dataset.load_data import load_dataset, load_graph, load_json
 from dataset.save_results import get_results
 from evaluation.eval import evaluate
 from model.mccg_model import MCCG, GAT
@@ -48,7 +48,7 @@ class MCCG_Trainer:
         w_cluster,
         t_multiview,
         t_cluster,
-        encoder
+        supervised=True
     ):
 
         names, pubs = load_dataset(mode)
@@ -110,7 +110,7 @@ class MCCG_Trainer:
                 ft_list, feature_weights, drop_feature_rate_view2, threshold=0.7
             )
 
-            #encoder = GAT(layer_shape[0], layer_shape[1], layer_shape[2])
+            encoder = GAT(layer_shape[0], layer_shape[1], layer_shape[2])
 
             model = MCCG(
                 encoder,
@@ -133,12 +133,18 @@ class MCCG_Trainer:
                 dis = pairwise_distances(
                     embd_cluster.cpu().detach().numpy(), metric="cosine"
                 )
-                labels = hdbscan.HDBSCAN(
+
+                if supervised:
+                    labels = get_true_labels(args.ground_truth_file, name)
+                    labels = np.array(labels)
+                else:
+                    labels = hdbscan.HDBSCAN(
                     cluster_selection_epsilon=db_eps,
                     min_samples=db_min,
                     min_cluster_size=db_min,
                     metric="precomputed",
                 ).fit_predict(dis.astype("double"))
+                    
                 labels = torch.from_numpy(labels).to(device)
 
                 loss_cluster = model.SelfSupConLoss(
@@ -203,3 +209,30 @@ class MCCG_Trainer:
             msg = f"combin_num: {combin_num}, pre: {pre:.4f}, rec: {rec:.4f}, f1: {f1:.4f}\n"
             logger.info(msg)
             f.write(msg)
+
+
+def get_true_labels(ground_truth, name):
+    """
+    Extract the true labels for a specific name from ground_truth data.
+
+    Args:
+        ground_truth (dict or str): Ground truth data (dict or path to JSON file).
+        name (str): Name key for which to retrieve true labels.
+
+    Returns:
+        pubs (list): List of paper IDs.
+        true_labels (list): List of corresponding true labels.
+    """
+    if isinstance(ground_truth, str):
+        ground_truth = load_json(ground_truth)
+
+    pubs = []
+    true_labels = []
+    ilabel = 0
+
+    for aid in ground_truth[name]:
+        pubs.extend(ground_truth[name][aid])
+        true_labels.extend([ilabel] * len(ground_truth[name][aid]))
+        ilabel += 1
+
+    return true_labels
