@@ -114,8 +114,13 @@ class MCCG_Trainer:
             )
 
             if refine:
-                weight_matrix = torch.ones(data.num_nodes, data.num_nodes).to(device)
-                weight_matrix = torch.ones(data.num_nodes, data.num_nodes).to(device)
+                # ones for initial weight matrix for nodes that have edges
+                weight_matrix = torch.zeros(data.num_nodes, data.num_nodes).to(device)
+                for i, j in data.edge_index.t():
+                    weight_matrix[i, j] = 1.0
+                    weight_matrix[j, i] = 1.0
+                weight_matrix_1 = weight_matrix.clone()
+                weight_matrix_2 = weight_matrix.clone()
 
             for epoch in range(1, args.epochs + 1):
                 model.train()
@@ -125,11 +130,11 @@ class MCCG_Trainer:
                 data2 = Data(x=x2, edge_index=edge_index2)
 
                 if refine:
-                    data1, weight_matrix = update_edges_by_cosine(
-                        data1, weight_matrix=weight_matrix
+                    data1, weight_matrix_1 = update_edges_by_cosine(
+                        data1, weight_matrix=weight_matrix_1
                     )
-                    data2, weight_matrix = update_edges_by_cosine(
-                        data2, weight_matrix=weight_matrix
+                    data2, weight_matrix_2 = update_edges_by_cosine(
+                        data2, weight_matrix=weight_matrix_2
                     )
 
                 data1 = data1.to(device)
