@@ -1,6 +1,6 @@
 import time
 from datetime import datetime, timedelta
-
+from torch_geometric.data import Data
 import hdbscan
 from sklearn.metrics.pairwise import pairwise_distances
 from dataset.enhance_graph import *
@@ -11,6 +11,7 @@ from model.mccg_model import MCCG, GAT
 from .utils import *
 from os.path import join
 from params import set_params
+from .refine import update_edges_by_cosine  
 
 _, args = set_params()
 
@@ -48,7 +49,7 @@ class MCCG_Trainer:
         w_cluster,
         t_multiview,
         t_cluster,
-        semi_supervised=True,
+        refine=True
     ):
 
         names, pubs = load_dataset(mode)
@@ -74,18 +75,6 @@ class MCCG_Trainer:
                 node_deg = degree(data.edge_index[1], num_nodes=data.num_nodes)
                 feature_weights = feature_drop_weights_dense(
                     ft_list, node_c=node_deg
-                ).to(device)
-            elif drop_scheme == "pr":
-                edge_weights = pr_drop_weights(data, aggr="sink", k=200).to(device)
-                node_pr = compute_pr(data)
-                feature_weights = feature_drop_weights_dense(
-                    ft_list, node_c=node_pr
-                ).to(device)
-            elif drop_scheme == "evc":
-                edge_weights = evc_drop_weights(data).to(device)
-                node_evc = eigenvector_centrality(data)
-                feature_weights = feature_drop_weights_dense(
-                    ft_list, node_c=node_evc
                 ).to(device)
             else:
                 raise ValueError(f"undefined drop scheme: {drop_scheme}.")
@@ -124,67 +113,44 @@ class MCCG_Trainer:
                 model.parameters(), lr=args.lr, weight_decay=l2_coef
             )
 
+            if refine:
+                freeze_mask1 = data.edge_index.clone()
+                freeze_mask2 = data.edge_index.clone()
+
             for epoch in range(1, args.epochs + 1):
                 model.train()
                 optimizer.zero_grad()
 
-                # Encode the original graph features
-                embd_multiview, embd_cluster = model(x1, adj1, M1, x2, adj2, M2)
+                data1 = Data(x=x1, edge_index=edge_index1)
+                data2 = Data(x=x2, edge_index=edge_index2)
 
-                if semi_supervised:
-                    # Pseudo-labels from HDBSCAN on current graph
-                    dis = pairwise_distances(
-                        ft_list.cpu().detach().numpy(), metric="cosine"
-                    )
-                    pseudo_labels = hdbscan.HDBSCAN(
-                        cluster_selection_epsilon=db_eps,
-                        min_samples=db_min,
-                        min_cluster_size=db_min,
-                        metric="precomputed",
-                    ).fit_predict(dis.astype("double"))
+                if refine:
+                    data1, freeze_mask1 = update_edges_by_cosine(data1, freeze_mask=freeze_mask1)
+                    data2, freeze_mask2 = update_edges_by_cosine(data2, freeze_mask=freeze_mask2)
 
-                    # Load known negatives from another dataset/name
-                    neg_name = names[(p + 1) % len(names)]
-                    _, neg_ft_list, _ = load_graph(neg_name, mode, th_a, th_o, th_v)
-                    neg_ft_list = neg_ft_list.float().to(device)
+                data1 = data1.to(device)
+                data2 = data2.to(device)
 
-                    # Assign dummy labels to negatives (to force contrastive separation)
-                    neg_labels = np.arange(
-                        100000, 100000 + neg_ft_list.shape[0], dtype=np.int64
-                    )
+                adj1 = get_adj(data1.edge_index, data1.num_nodes)
+                adj2 = get_adj(data2.edge_index, data2.num_nodes)
+                M1 = get_M(adj1, t=2)
+                M2 = get_M(adj2, t=2)
 
-                    # Encode negative samples without graph structure (standalone features)
-                    with torch.no_grad():
-                        neg_size = neg_ft_list.shape[0]
-                        neg_adj = torch.eye(neg_size).to(device)
-                        neg_M = torch.eye(neg_size).to(device)
-                        neg_embd_multiview, neg_embd_cluster = model(
-                            neg_ft_list, neg_adj, neg_M, neg_ft_list, neg_adj, neg_M
-                        )
+                embd_multiview, embd_cluster = model(
+                    data1.x, adj1, M1, data2.x, adj2, M2
+                )
 
-                    # Concatenate positive and negative embeddings
-                    embd_multiview = torch.cat(
-                        [embd_multiview, neg_embd_multiview], dim=0
-                    )
-                    embd_cluster = torch.cat([embd_cluster, neg_embd_cluster], dim=0)
+                dis = pairwise_distances(
+                    embd_cluster.cpu().detach().numpy(), metric="cosine"
+                )
+                labels = hdbscan.HDBSCAN(
+                    cluster_selection_epsilon=db_eps,
+                    min_samples=db_min,
+                    min_cluster_size=db_min,
+                    metric="precomputed",
+                ).fit_predict(dis.astype("double"))
+                labels = torch.from_numpy(labels).to(device)
 
-                    # Merge labels
-                    labels_full = np.concatenate([pseudo_labels, neg_labels], axis=0)
-                    labels = torch.from_numpy(labels_full).to(device)
-
-                else:
-                    dis = pairwise_distances(
-                        embd_cluster.cpu().detach().numpy(), metric="cosine"
-                    )
-                    labels = hdbscan.HDBSCAN(
-                        cluster_selection_epsilon=db_eps,
-                        min_samples=db_min,
-                        min_cluster_size=db_min,
-                        metric="precomputed",
-                    ).fit_predict(dis.astype("double"))
-                    labels = torch.from_numpy(labels).to(device)
-
-                # Loss computation
                 loss_cluster = model.SelfSupConLoss(
                     embd_cluster.unsqueeze(1),
                     labels,
@@ -235,6 +201,12 @@ class MCCG_Trainer:
                 pred = matx2list(labels)
 
                 results[name] = pred
+
+                predict = get_results([name], pubs, results)
+
+                pre, rec, f1 = evaluate(predict, args.ground_truth_file, print_names=True)
+
+
 
         predict = get_results(names, pubs, results)
 
