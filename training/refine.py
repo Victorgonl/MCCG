@@ -142,7 +142,7 @@ def update_edges_by_cosine(
     sim = torch.mm(x, x.t())
 
     # Get upper-triangle indices (avoid duplicates)
-    idx_i, idx_j = torch.triu_indices(n, n, offset=1)
+    idx_i, idx_j = torch.triu_indices(n, n, offset=1).to(x.device)
 
     # Optional random sampling to reduce computation
     total_pairs = idx_i.size(0)
