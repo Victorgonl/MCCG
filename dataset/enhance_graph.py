@@ -1,35 +1,9 @@
 import torch
-from torch_scatter import scatter
 from torch_geometric.utils import degree, to_networkx
 import networkx as nx
 from params import set_params
 
 _, args = set_params()
-
-
-def compute_pr(data, damp: float = 0.85, k: int = 10):
-    """
-    Compute PageRank scores for each node in the graph.
-
-    Args:
-        data (torch_geometric.data.Data): Input graph data with edge_index.
-        damp (float): Damping factor, usually between 0.85 and 0.9.
-        k (int): Number of power iterations to run.
-
-    Returns:
-        torch.Tensor: PageRank scores for each node.
-    """
-    num_nodes = data.num_nodes
-    edge_index = data.edge_index
-    deg_out = degree(edge_index[0], num_nodes=num_nodes)
-    x = torch.ones((num_nodes,)).to(edge_index.device).to(torch.float32)
-
-    for i in range(k):
-        edge_msg = x[edge_index[0]] / deg_out[edge_index[0]]
-        agg_msg = scatter(edge_msg, edge_index[1], reduce="sum", dim_size=num_nodes)
-        x = (1 - damp) * x + damp * agg_msg
-
-    return x
 
 
 def eigenvector_centrality(data):
@@ -209,52 +183,3 @@ def degree_drop_weights(data):
     weights = (s_col.max() - s_col) / (s_col.max() - s_col.mean())
     return weights
 
-
-def pr_drop_weights(data, aggr: str = "sink", k: int = 10):
-    """
-    Compute edge drop weights based on PageRank values.
-
-    Args:
-        data (torch_geometric.data.Data): Input graph data.
-        aggr (str): Aggregation method: 'sink', 'source', or 'mean'.
-        k (int): Number of iterations for PageRank.
-
-    Returns:
-        torch.Tensor: Edge drop weights based on PageRank.
-    """
-    edge_index = data.edge_index
-    pv = compute_pr(data, k=k)
-    pv_row = pv[edge_index[0]].to(torch.float32)
-    pv_col = pv[edge_index[1]].to(torch.float32)
-    s_row = torch.log(pv_row)
-    s_col = torch.log(pv_col)
-    if aggr == "sink":
-        s = s_col
-    elif aggr == "source":
-        s = s_row
-    elif aggr == "mean":
-        s = (s_col + s_row) * 0.5
-    else:
-        s = s_col
-    weights = (s.max() - s) / (s.max() - s.mean())
-    return weights
-
-
-def evc_drop_weights(data):
-    """
-    Compute edge drop weights based on eigenvector centrality of target nodes.
-
-    Args:
-        data (torch_geometric.data.Data): Input graph data.
-
-    Returns:
-        torch.Tensor: Edge drop weights based on eigenvector centrality.
-    """
-    evc = eigenvector_centrality(data)
-    evc = evc.where(evc > 0, torch.zeros_like(evc))
-    evc = evc + 1e-8
-    s = evc.log()
-    edge_index = data.edge_index
-    s_row, s_col = s[edge_index[0]], s[edge_index[1]]
-    s = s_col
-    return (s.max() - s) / (s.max() - s.mean())
