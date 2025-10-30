@@ -1,11 +1,11 @@
 cuda: true
 gpu: 0
-dataset: whoiswho-mini
+dataset: whoiswho-test
 mode: test
-save_path: dataset/whoiswho-mini
-log_dir: .expert_record/whoiswho-mini
-predict_result: whoiswho-mini_results.txt
-ground_truth_file: dataset/whoiswho-mini/src/test/sna_test_ground_truth.json
+save_path: dataset/whoiswho-test
+log_dir: .expert_record/whoiswho-test
+predict_result: whoiswho-test_results.txt
+ground_truth_file: dataset/whoiswho-test/src/test/sna_test_ground_truth.json
 layer_shape:
 - 100
 - 256
@@ -43,4 +43,4 @@ t_multiview:
 - 0.3
 t_cluster:
 - 0.3
-refine: true
+refine: false

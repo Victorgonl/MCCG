@@ -1,4 +1,6 @@
 __pycache__
 whoiswho-mini
 whoiswho-micro
+whoiswho-test
 .expert_record/whoiswho-mini_results.txt
+.ignore
