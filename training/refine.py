@@ -148,10 +148,12 @@ def update_edges_by_cosine(
 
     s = sim[idx_i, idx_j]
 
+    # Masks for high similarity (create/strengthen), low similarity (prune), and mid (stabilize)
     high_mask = s > high_thresh
     low_mask = s < low_thresh
     mid_mask = (~high_mask) & (~low_mask)
 
+    # Strengthen or create edges for high similarity
     weight_matrix[idx_i[high_mask], idx_j[high_mask]] = (1 - alpha) * weight_matrix[
         idx_i[high_mask], idx_j[high_mask]
     ] + alpha * s[high_mask]
@@ -159,9 +161,13 @@ def update_edges_by_cosine(
         idx_i[high_mask], idx_j[high_mask]
     ]
 
+    # Prune edges for low similarity
     weight_matrix[idx_i[low_mask], idx_j[low_mask]] *= 1 - alpha
-    weight_matrix[idx_j[low_mask], idx_i[low_mask]] *= 1 - alpha
+    weight_matrix[idx_j[low_mask], idx_i[low_mask]] = weight_matrix[
+        idx_i[low_mask], idx_j[low_mask]
+    ]
 
+    # Slightly adjust mid-similarity edges (stabilization)
     weight_matrix[idx_i[mid_mask], idx_j[mid_mask]] = (1 - alpha / 2) * weight_matrix[
         idx_i[mid_mask], idx_j[mid_mask]
     ] + (alpha / 2) * s[mid_mask]
@@ -169,12 +175,16 @@ def update_edges_by_cosine(
         idx_i[mid_mask], idx_j[mid_mask]
     ]
 
+    # Clamp to [0, 1]
     weight_matrix = torch.clamp(weight_matrix, 0.0, 1.0)
 
+    # Prune edges below the weight threshold
     keep_mask = weight_matrix > weight_thresh
     edge_index = keep_mask.nonzero(as_tuple=False).t().contiguous()
 
+    # Handle empty graphs safely
     if edge_index.numel() == 0:
         edge_index = torch.tensor([[0], [0]], dtype=torch.long, device=x.device)
 
+    # Return updated graph and weights
     return Data(x=data.x, edge_index=edge_index), weight_matrix
