@@ -129,8 +129,8 @@ def update_edges_by_cosine(
     data,
     weight_matrix: torch.Tensor,
     high_thresh=0.95,
-    low_thresh=0.45,
-    percent=0.2,
+    low_thresh=0.25,
+    percent=0.3,
     alpha=0.05,
     weight_thresh=0.05,
 ):
