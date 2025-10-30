@@ -64,7 +64,8 @@ import torch.nn.functional as F
 from torch_geometric.data import Data
 import random
 
-def update_edges_by_cosine_with_weights(
+
+def update_edges_by_cosine(
     data,
     weight_matrix: torch.Tensor,
     high_thresh=0.75,
