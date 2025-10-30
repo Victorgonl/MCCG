@@ -131,20 +131,15 @@ def update_edges_by_cosine(
     high_thresh=0.95,
     low_thresh=0.45,
     percent=0.2,
-    lr=0.01,
-    decay=0.95,
+    alpha=0.05,
     weight_thresh=0.05,
 ):
     x = F.normalize(data.x, dim=1)
     n = x.size(0)
 
-    # Compute cosine similarity (GPU-accelerated)
     sim = torch.mm(x, x.t())
 
-    # Get upper-triangle indices (avoid duplicates)
     idx_i, idx_j = torch.triu_indices(n, n, offset=1).to(x.device)
-
-    # Optional random sampling to reduce computation
     total_pairs = idx_i.size(0)
     num_samples = int(total_pairs * percent)
     if num_samples < total_pairs:
@@ -153,26 +148,29 @@ def update_edges_by_cosine(
 
     s = sim[idx_i, idx_j]
 
-    # Prepare masks
     high_mask = s > high_thresh
     low_mask = s < low_thresh
     mid_mask = (~high_mask) & (~low_mask)
 
-    # Update weights using vectorized operations
-    weight_matrix[idx_i[high_mask], idx_j[high_mask]] = (
-        weight_matrix[idx_i[high_mask], idx_j[high_mask]] * decay + lr * s[high_mask]
-    )
-    weight_matrix[idx_j[high_mask], idx_i[high_mask]] = (
-        weight_matrix[idx_j[high_mask], idx_i[high_mask]] * decay + lr * s[high_mask]
-    )
+    weight_matrix[idx_i[high_mask], idx_j[high_mask]] = (1 - alpha) * weight_matrix[
+        idx_i[high_mask], idx_j[high_mask]
+    ] + alpha * s[high_mask]
+    weight_matrix[idx_j[high_mask], idx_i[high_mask]] = weight_matrix[
+        idx_i[high_mask], idx_j[high_mask]
+    ]
 
-    weight_matrix[idx_i[low_mask], idx_j[low_mask]] *= decay
-    weight_matrix[idx_j[low_mask], idx_i[low_mask]] *= decay
+    weight_matrix[idx_i[low_mask], idx_j[low_mask]] *= 1 - alpha
+    weight_matrix[idx_j[low_mask], idx_i[low_mask]] *= 1 - alpha
 
-    weight_matrix[idx_i[mid_mask], idx_j[mid_mask]] *= decay
-    weight_matrix[idx_j[mid_mask], idx_i[mid_mask]] *= decay
+    weight_matrix[idx_i[mid_mask], idx_j[mid_mask]] = (1 - alpha / 2) * weight_matrix[
+        idx_i[mid_mask], idx_j[mid_mask]
+    ] + (alpha / 2) * s[mid_mask]
+    weight_matrix[idx_j[mid_mask], idx_i[mid_mask]] = weight_matrix[
+        idx_i[mid_mask], idx_j[mid_mask]
+    ]
 
-    # Build edge set based on thresholds (tensor form)
+    weight_matrix = torch.clamp(weight_matrix, 0.0, 1.0)
+
     keep_mask = weight_matrix > weight_thresh
     edge_index = keep_mask.nonzero(as_tuple=False).t().contiguous()
 
