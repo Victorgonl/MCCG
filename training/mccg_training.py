@@ -11,7 +11,7 @@ from model.mccg_model import MCCG, GAT
 from .utils import *
 from os.path import join
 from params import set_params
-from .refine import update_edges_by_cosine  
+from .refine import update_edges_by_cosine
 
 _, args = set_params()
 
@@ -49,7 +49,7 @@ class MCCG_Trainer:
         w_cluster,
         t_multiview,
         t_cluster,
-        refine=True
+        refine=True,
     ):
 
         names, pubs = load_dataset(mode)
@@ -114,8 +114,8 @@ class MCCG_Trainer:
             )
 
             if refine:
-                freeze_mask1 = data.edge_index.clone()
-                freeze_mask2 = data.edge_index.clone()
+                weight_matrix = torch.ones(data.num_nodes, data.num_nodes).to(device)
+                weight_matrix = torch.ones(data.num_nodes, data.num_nodes).to(device)
 
             for epoch in range(1, args.epochs + 1):
                 model.train()
@@ -125,8 +125,12 @@ class MCCG_Trainer:
                 data2 = Data(x=x2, edge_index=edge_index2)
 
                 if refine:
-                    data1, freeze_mask1 = update_edges_by_cosine(data1, freeze_mask=freeze_mask1)
-                    data2, freeze_mask2 = update_edges_by_cosine(data2, freeze_mask=freeze_mask2)
+                    data1, weight_matrix = update_edges_by_cosine(
+                        data1, weight_matrix=weight_matrix
+                    )
+                    data2, weight_matrix = update_edges_by_cosine(
+                        data2, weight_matrix=weight_matrix
+                    )
 
                 data1 = data1.to(device)
                 data2 = data2.to(device)
@@ -204,9 +208,9 @@ class MCCG_Trainer:
 
                 predict = get_results([name], pubs, results)
 
-                pre, rec, f1 = evaluate(predict, args.ground_truth_file, print_names=True)
-
-
+                pre, rec, f1 = evaluate(
+                    predict, args.ground_truth_file, print_names=True
+                )
 
         predict = get_results(names, pubs, results)
 

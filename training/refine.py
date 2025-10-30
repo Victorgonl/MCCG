@@ -1,9 +1,17 @@
+from typing import Optional
 import torch
 import torch.nn.functional as F
 from torch_geometric.data import Data
 import random
 
-def update_edges_by_cosine(data, high_thresh=0.75, low_thresh=0.45, percent=0.2, freeze_mask=None):
+
+""" def update_edges_by_cosine(
+    data,
+    high_thresh=0.75,
+    low_thresh=0.45,
+    percent=0.2,
+    freeze_mask: Optional[torch.Tensor] = None,
+):
     x = F.normalize(data.x, dim=1)
     sim = torch.mm(x, x.t())
     n = sim.size(0)
@@ -18,11 +26,15 @@ def update_edges_by_cosine(data, high_thresh=0.75, low_thresh=0.45, percent=0.2,
     total_pairs = n * (n - 1) // 2
     num_samples = int(total_pairs * percent)
     all_pairs = [(i, j) for i in range(n) for j in range(i + 1, n)]
-    sampled_pairs = random.sample(all_pairs, num_samples) if num_samples < total_pairs else all_pairs
+    sampled_pairs = (
+        random.sample(all_pairs, num_samples)
+        if num_samples < total_pairs
+        else all_pairs
+    )
 
     for i, j in sampled_pairs:
         if (i, j) in frozen_edges or (j, i) in frozen_edges:
-            continue # skip frozen edges
+            continue  # skip frozen edges
 
         s = sim[i, j].item()
         if s > high_thresh:
@@ -40,4 +52,72 @@ def update_edges_by_cosine(data, high_thresh=0.75, low_thresh=0.45, percent=0.2,
     edge_index = torch.tensor(updated_edges, dtype=torch.long).t().contiguous()
 
     # return updated data and updated freeze mask
-    return Data(x=data.x, edge_index=edge_index), torch.tensor(list(frozen_edges), dtype=torch.long).t().contiguous() if frozen_edges else None
+    return Data(x=data.x, edge_index=edge_index), (
+        torch.tensor(list(frozen_edges), dtype=torch.long).t().contiguous()
+        if frozen_edges
+        else None
+    )
+ """
+
+import torch
+import torch.nn.functional as F
+from torch_geometric.data import Data
+import random
+
+def update_edges_by_cosine_with_weights(
+    data,
+    weight_matrix: torch.Tensor,
+    high_thresh=0.75,
+    low_thresh=0.45,
+    percent=0.2,
+    lr=0.1,
+    decay=0.95,
+):
+    x = F.normalize(data.x, dim=1)
+    sim = torch.mm(x, x.t())
+    n = sim.size(0)
+    edge_set = set([(int(u), int(v)) for u, v in data.edge_index.t().tolist()])
+
+    total_pairs = n * (n - 1) // 2
+    num_samples = int(total_pairs * percent)
+    all_pairs = [(i, j) for i in range(n) for j in range(i + 1, n)]
+    sampled_pairs = (
+        random.sample(all_pairs, num_samples)
+        if num_samples < total_pairs
+        else all_pairs
+    )
+
+    for i, j in sampled_pairs:
+        s = sim[i, j].item()
+
+        # Update weights using cosine similarity feedback
+        if s > high_thresh:
+            weight_matrix[i, j] = weight_matrix[i, j] * decay + lr * s
+            weight_matrix[j, i] = weight_matrix[j, i] * decay + lr * s
+            edge_set.add((i, j))
+            edge_set.add((j, i))
+        elif s < low_thresh:
+            weight_matrix[i, j] = weight_matrix[i, j] * decay
+            weight_matrix[j, i] = weight_matrix[j, i] * decay
+            if (i, j) in edge_set:
+                edge_set.discard((i, j))
+                edge_set.discard((j, i))
+        else:
+            weight_matrix[i, j] *= decay
+            weight_matrix[j, i] *= decay
+
+    # Threshold weights to optionally prune very low-weight connections
+    weight_thresh = 0.05
+    for i in range(n):
+        for j in range(i + 1, n):
+            if weight_matrix[i, j] < weight_thresh and (i, j) in edge_set:
+                edge_set.discard((i, j))
+                edge_set.discard((j, i))
+
+    updated_edges = list(edge_set)
+    if len(updated_edges) == 0:
+        updated_edges = [(0, 0)]
+
+    edge_index = torch.tensor(updated_edges, dtype=torch.long).t().contiguous()
+
+    return Data(x=data.x, edge_index=edge_index), weight_matrix
