@@ -1,5 +1,5 @@
 torch
-torch_geometric
+torch_geometric==2.3.1
 ipykernel
 scikit-learn
 scipy
